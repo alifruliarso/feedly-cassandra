@@ -19,8 +19,6 @@ DONE:
 + add CF creation options - compressed.
 + create indices in schema
 
-IN PROGRESS:
-
 TODO:
 + find by native index
 + custom indexes (find/save)
