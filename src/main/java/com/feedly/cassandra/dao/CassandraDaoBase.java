@@ -16,6 +16,7 @@ import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
+import me.prettyprint.cassandra.model.IndexedSlicesQuery;
 import me.prettyprint.cassandra.serializers.BytesArraySerializer;
 import me.prettyprint.cassandra.serializers.DynamicCompositeSerializer;
 import me.prettyprint.cassandra.serializers.StringSerializer;
@@ -24,6 +25,7 @@ import me.prettyprint.hector.api.beans.AbstractComposite.ComponentEquality;
 import me.prettyprint.hector.api.beans.ColumnSlice;
 import me.prettyprint.hector.api.beans.DynamicComposite;
 import me.prettyprint.hector.api.beans.HColumn;
+import me.prettyprint.hector.api.beans.OrderedRows;
 import me.prettyprint.hector.api.beans.Row;
 import me.prettyprint.hector.api.beans.Rows;
 import me.prettyprint.hector.api.factory.HFactory;
@@ -46,7 +48,8 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
 {
     private static final Logger _logger = LoggerFactory.getLogger(CassandraDaoBase.class.getName());
     
-    private static final int COL_RANGE_SIZE = 100;
+    static final int COL_RANGE_SIZE = 100;
+    static final int ROW_RANGE_SIZE = 100;
     private static final BytesArraySerializer SER_BYTES = BytesArraySerializer.get();
     private static final StringSerializer SER_STRING = StringSerializer.get();
     private static final DynamicCompositeSerializer SER_COMPOSITE = new DynamicCompositeSerializer();
@@ -549,6 +552,87 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         return values;
     }
     
+    public V findByIndex(V value)
+    {
+        Collection<V> values = bulkFindByIndex(value);
+        
+        if(values == null || values.isEmpty())
+            return null;
+        
+        if(values.size() > 1)
+            throw new IllegalStateException("non-unique value");
+        
+        return values.iterator().next();
+    }
+    
+    @SuppressWarnings("unchecked")
+    public Collection<V> bulkFindByIndex(V value)
+    {
+        IEnhancedBean bean = asBean(value);
+        BitSet dirty = bean.getModifiedFields();
+        List<PropertyMetadata> properties = _valueMeta.getProperties();
+        for(int i = dirty.nextSetBit(0); i >= 0; i = dirty.nextSetBit(i + 1))
+        {
+            PropertyMetadata pm = properties.get(i);
+            if(pm.isIndexed())
+            {
+                Object propVal = invokeGetter(pm, value);
+                if(propVal != null)
+                {
+                    PropertyMetadata keyMeta = _valueMeta.getKeyMetadata();
+                    IndexedSlicesQuery<byte[], byte[], byte[]> query = HFactory.createIndexedSlicesQuery(_keyspaceFactory.createKeyspace(), SER_BYTES, SER_BYTES, SER_BYTES);
+                    query.setColumnFamily(_columnFamily);
+                    query.setRowCount(ROW_RANGE_SIZE);
+                    query.addEqualsExpression(pm.getPhysicalNameBytes(), serialize(propVal, false, pm.getSerializer()));
+                    query.setRange(null, null, false, COL_RANGE_SIZE);
+                    
+                    OrderedRows<byte[],byte[],byte[]> rows = query.execute().get();
+                    
+                    List<V> values = new ArrayList<V>();
+                    boolean checkDuplicateKey = false;
+                    while(true)
+                    {
+                        /*
+                         * the last key of the previous range and the first key of the current range may overlap
+                         */
+                        for(Row<byte[], byte[], byte[]> row : rows)
+                        {
+                            K key = (K) keyMeta.getSerializer().fromBytes(row.getKey());
+                            
+                            if(checkDuplicateKey)
+                            {
+                                K lastKey = (K) invokeGetter(keyMeta, values.get(values.size()-1));
+                                
+                                if(key.equals(lastKey))
+                                    continue;
+                                
+                                checkDuplicateKey = false;
+                            }
+                            
+                            value = fromColumnSlice(key, null, keyMeta, row.getKey(), null, row.getColumnSlice(), null);
+                            
+                            if(value != null)
+                                values.add(value);
+                        }
+                        
+                        if(rows.getCount() == ROW_RANGE_SIZE)
+                        {
+                            query.setStartKey(rows.getList().get(ROW_RANGE_SIZE-1).getKey());
+                            rows = query.execute().get();
+                            checkDuplicateKey = true;
+                        }
+                        else 
+                            break;
+                    } 
+                    
+                    return values;
+                }
+            }
+        }
+        
+        throw new IllegalArgumentException("no applicable index found.");
+    }
+    
     private Set<? extends Object> partialProperties(Set<? extends Object> includes, Set<String> excludes)
     {
         if(includes != null && excludes != null)
@@ -995,5 +1079,6 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
             throw new IllegalArgumentException("unexpected error invoking " + pm.getGetter(), e);
         }
     }
+ 
     
 }

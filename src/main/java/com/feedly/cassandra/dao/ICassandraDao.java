@@ -30,4 +30,6 @@ public interface ICassandraDao<K, V>
     public V load(K key);
     public Collection<V> bulkLoad(Collection<K> keys);
 
+    public V findByIndex(V template); //convenience method
+    public Collection<V> bulkFindByIndex(V template);
 }
