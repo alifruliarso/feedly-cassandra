@@ -1,4 +1,4 @@
-package com.feedly.cassandra.bean.enhance;
+package com.feedly.cassandra.entity.enhance;
 
 import static org.junit.Assert.*;
 
@@ -7,15 +7,16 @@ import java.util.Map;
 
 import org.junit.Test;
 
+
 public class EnhancerTest
 {
     @Test
     public void testEnhancer()
     {
         SampleBean bean = new SampleBean();
-        assertTrue(bean instanceof IEnhancedBean); //enhancer ant task runs as part of process-test-classes maven phase...
+        assertTrue(bean instanceof IEnhancedEntity); //enhancer ant task runs as part of process-test-classes maven phase...
 
-        IEnhancedBean enh = (IEnhancedBean) bean;
+        IEnhancedEntity enh = (IEnhancedEntity) bean;
         assertNotNull(enh.getModifiedFields());
         
         assertTrue(enh.getModifiedFields().isEmpty()); //nothing should have been set
@@ -57,7 +58,7 @@ public class EnhancerTest
 
         //test anonymous handlers
         bean = new SampleBean();
-        enh = (IEnhancedBean) bean;
+        enh = (IEnhancedEntity) bean;
         Map<String, Object> map = new HashMap<String, Object>();
         bean.setUnmapped(map);
         assertTrue(enh.getUnmappedFieldsModified());
@@ -69,7 +70,7 @@ public class EnhancerTest
         //test collections - dirty field should work on getters AND setters
         
         MapBean mapBean = new MapBean();
-        enh = (IEnhancedBean) mapBean;
+        enh = (IEnhancedEntity) mapBean;
         map = new HashMap<String, Object>();
         mapBean.setMapProp(map);
         assertEquals(enh.getModifiedFields().toString(), 1, enh.getModifiedFields().cardinality());

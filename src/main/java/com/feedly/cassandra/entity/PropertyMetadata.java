@@ -1,4 +1,4 @@
-package com.feedly.cassandra.bean;
+package com.feedly.cassandra.entity;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
@@ -86,7 +86,7 @@ public class PropertyMetadata implements Comparable<PropertyMetadata>
         else if(_fieldClass.equals(Map.class) || _fieldClass.equals(List.class) || _fieldClass.equals(SortedMap.class))
             _serializer = ByteIndicatorSerializer.get();
         else
-            _serializer = BeanUtils.getSerializer(_fieldClass);
+            _serializer = EntityUtils.getSerializer(_fieldClass);
 
         if(!Map.class.equals(_fieldClass) &&
                 !SortedMap.class.equals(_fieldClass) &&

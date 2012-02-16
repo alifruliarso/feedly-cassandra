@@ -1,4 +1,4 @@
-package com.feedly.cassandra.bean;
+package com.feedly.cassandra.entity;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -12,11 +12,11 @@ import me.prettyprint.hector.api.Serializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.feedly.cassandra.bean.enhance.IEnhancedBean;
+import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 
-public class BeanUtils
+public class EntityUtils
 {
-    private static final Logger _logger = LoggerFactory.getLogger(BeanUtils.class.getName());
+    private static final Logger _logger = LoggerFactory.getLogger(EntityUtils.class.getName());
     
     public static final boolean modifiersOk(Method method)
     {
@@ -27,9 +27,9 @@ public class BeanUtils
     
     public static final void initBitSet(Object o)
     {
-        if(o instanceof IEnhancedBean)
+        if(o instanceof IEnhancedEntity)
         {
-            ((IEnhancedBean) o).setModifiedFields(new BitSet());
+            ((IEnhancedEntity) o).setModifiedFields(new BitSet());
         }
     }
     

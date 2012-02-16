@@ -1,4 +1,4 @@
-package com.feedly.cassandra.bean.upd_enhance;
+package com.feedly.cassandra.entity.upd_enhance;
 
 import java.lang.reflect.Field;
 import java.util.Date;
@@ -9,8 +9,8 @@ import com.feedly.cassandra.anno.Column;
 import com.feedly.cassandra.anno.ColumnFamily;
 import com.feedly.cassandra.anno.RowKey;
 import com.feedly.cassandra.anno.UnmappedColumnHandler;
-import com.feedly.cassandra.bean.BeanUtils;
-import com.feedly.cassandra.bean.enhance.SampleBean;
+import com.feedly.cassandra.entity.EntityUtils;
+import com.feedly.cassandra.entity.enhance.SampleBean;
 
 @ColumnFamily(name="sample", compressed=true)
 public class SampleBean2 implements Cloneable, Comparable<SampleBean2>
@@ -170,7 +170,7 @@ public class SampleBean2 implements Cloneable, Comparable<SampleBean2>
     public boolean equals(Object obj)
     {
         if(obj instanceof SampleBean)
-            return BeanUtils.beanFieldsEqual(this, obj);
+            return EntityUtils.beanFieldsEqual(this, obj);
 
         return false;
     }

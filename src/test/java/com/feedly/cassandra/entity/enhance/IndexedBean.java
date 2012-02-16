@@ -1,11 +1,11 @@
-package com.feedly.cassandra.bean.enhance;
+package com.feedly.cassandra.entity.enhance;
 
 import java.lang.reflect.Field;
 
 import com.feedly.cassandra.anno.Column;
 import com.feedly.cassandra.anno.ColumnFamily;
 import com.feedly.cassandra.anno.RowKey;
-import com.feedly.cassandra.bean.BeanUtils;
+import com.feedly.cassandra.entity.EntityUtils;
 
 @ColumnFamily(name="indexedbean")
 public class IndexedBean implements Comparable<IndexedBean>
@@ -85,7 +85,7 @@ public class IndexedBean implements Comparable<IndexedBean>
     public boolean equals(Object obj)
     {
         if(obj instanceof IndexedBean)
-            return BeanUtils.beanFieldsEqual(this, obj);
+            return EntityUtils.beanFieldsEqual(this, obj);
 
         return false;
     }

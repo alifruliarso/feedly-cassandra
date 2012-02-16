@@ -24,8 +24,7 @@ import me.prettyprint.hector.api.ddl.ComparatorType;
 import me.prettyprint.hector.api.ddl.KeyspaceDefinition;
 import me.prettyprint.hector.api.factory.HFactory;
 
-import org.apache.cassandra.db.marshal.DynamicCompositeType;
-import org.apache.cassandra.db.marshal.UTF8Type;
+import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.io.compress.CompressionParameters;
 import org.apache.cassandra.io.compress.DeflateCompressor;
 import org.apache.cassandra.io.compress.SnappyCompressor;
@@ -34,10 +33,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.feedly.cassandra.anno.ColumnFamily;
-import com.feedly.cassandra.bean.BeanMetadata;
-import com.feedly.cassandra.bean.PropertyMetadata;
-import com.feedly.cassandra.bean.enhance.ColumnFamilyTransformTask;
-import com.feedly.cassandra.bean.enhance.IEnhancedBean;
+import com.feedly.cassandra.entity.EntityMetadata;
+import com.feedly.cassandra.entity.PropertyMetadata;
+import com.feedly.cassandra.entity.enhance.ColumnFamilyTransformTask;
+import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 
 public class PersistenceManager implements IKeyspaceFactory
 {
@@ -101,7 +100,7 @@ public class PersistenceManager implements IKeyspaceFactory
             boolean enh = false;
             for(Class<?> iface : family.getInterfaces())
             {
-                if(iface.equals(IEnhancedBean.class))
+                if(iface.equals(IEnhancedEntity.class))
                 {
                     enh = true;
                     break;
@@ -153,7 +152,7 @@ public class PersistenceManager implements IKeyspaceFactory
     private void syncColumnFamily(Class<?> family, KeyspaceDefinition keyspaceDef)
     {
         ColumnFamily annotation = family.getAnnotation(ColumnFamily.class);
-        BeanMetadata<?> meta = new BeanMetadata(family, annotation.forceCompositeColumns());
+        EntityMetadata<?> meta = new EntityMetadata(family, annotation.forceCompositeColumns());
         
         String familyName = annotation.name();
         ColumnFamilyDefinition existing = null;
@@ -270,13 +269,13 @@ public class PersistenceManager implements IKeyspaceFactory
         }
     }
 
-    private BasicColumnDefinition createColDef(BeanMetadata<?> meta, String familyName, PropertyMetadata pm)
+    private BasicColumnDefinition createColDef(EntityMetadata<?> meta, String familyName, PropertyMetadata pm)
     {
         BasicColumnDefinition colDef = new BasicColumnDefinition();
         colDef.setIndexName(String.format("%s_%s", familyName, pm.getPhysicalName()));
         colDef.setIndexType(ColumnIndexType.KEYS);
         colDef.setName(ByteBuffer.wrap(pm.getPhysicalNameBytes()));
-        colDef.setValidationClass(meta.useCompositeColumns() ? DynamicCompositeType.class.getName() : UTF8Type.class.getName());
+        colDef.setValidationClass(BytesType.class.getName()); //skip validation
         return colDef;
     }
 

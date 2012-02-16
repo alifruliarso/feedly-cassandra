@@ -1,4 +1,4 @@
-package com.feedly.cassandra.bean.enhance;
+package com.feedly.cassandra.entity.enhance;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -7,7 +7,7 @@ import java.util.List;
 import com.feedly.cassandra.anno.Column;
 import com.feedly.cassandra.anno.ColumnFamily;
 import com.feedly.cassandra.anno.RowKey;
-import com.feedly.cassandra.bean.BeanUtils;
+import com.feedly.cassandra.entity.EntityUtils;
 
 @ColumnFamily(name="listbean", compressed=true, compressionAlgo="DeflateCompressor", compressionChunkLength=8)
 public class ListBean implements Comparable<ListBean>, Cloneable
@@ -18,7 +18,7 @@ public class ListBean implements Comparable<ListBean>, Cloneable
     @Column
     private String strProp1;
     
-    @Column
+    @Column(indexed=true)
     private String strProp;
     
     @Column
@@ -68,7 +68,7 @@ public class ListBean implements Comparable<ListBean>, Cloneable
     public boolean equals(Object obj)
     {
         if(obj instanceof ListBean)
-            return BeanUtils.beanFieldsEqual(this, obj);
+            return EntityUtils.beanFieldsEqual(this, obj);
 
         return false;
     }

@@ -30,6 +30,14 @@ public interface ICassandraDao<K, V>
     public V load(K key);
     public Collection<V> bulkLoad(Collection<K> keys);
 
-    public V findByIndex(V template); //convenience method
+    /*
+     * convenience methods that must find at most 1 value
+     */
+    public V findByIndex(V template); 
+    public V findByIndexPartial(V template, Object start, Object end); //end is inclusive
+    public V findByIndexPartial(V template, Set<? extends Object> includes, Set<String> excludes);
+    
     public Collection<V> bulkFindByIndex(V template);
+    public Collection<V> bulkFindByIndexPartial(V template, Object start, Object end); //end is inclusive
+    public Collection<V> bulkFindByIndexPartial(V template, Set<? extends Object> includes, Set<String> excludes);
 }

@@ -1,4 +1,4 @@
-package com.feedly.cassandra.bean.enhance;
+package com.feedly.cassandra.entity.enhance;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -80,7 +80,7 @@ public class BeanInfoVisitor implements ClassVisitor
     public void visit(int version, int access, String name, String signature, String superName, String[] interfaces)
     {
         _className = name.replaceAll("/", ".");
-        String iface = IEnhancedBean.class.getName().replaceAll("\\.", "/");
+        String iface = IEnhancedEntity.class.getName().replaceAll("\\.", "/");
         for (String i : interfaces)
         {
             if (iface.equals(i))

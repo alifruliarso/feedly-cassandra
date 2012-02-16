@@ -1,4 +1,4 @@
-package com.feedly.cassandra.bean.enhance;
+package com.feedly.cassandra.entity.enhance;
 
 import java.lang.reflect.Field;
 import java.util.Date;
@@ -9,7 +9,7 @@ import com.feedly.cassandra.anno.Column;
 import com.feedly.cassandra.anno.ColumnFamily;
 import com.feedly.cassandra.anno.RowKey;
 import com.feedly.cassandra.anno.UnmappedColumnHandler;
-import com.feedly.cassandra.bean.BeanUtils;
+import com.feedly.cassandra.entity.EntityUtils;
 
 @ColumnFamily(name="sample", compressed=false)
 public class SampleBean implements Cloneable, Comparable<SampleBean>
@@ -169,7 +169,7 @@ public class SampleBean implements Cloneable, Comparable<SampleBean>
     public boolean equals(Object obj)
     {
         if(obj instanceof SampleBean)
-            return BeanUtils.beanFieldsEqual(this, obj);
+            return EntityUtils.beanFieldsEqual(this, obj);
 
         return false;
     }

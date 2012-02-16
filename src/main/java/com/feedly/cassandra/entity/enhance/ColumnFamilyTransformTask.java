@@ -1,4 +1,4 @@
-package com.feedly.cassandra.bean.enhance;
+package com.feedly.cassandra.entity.enhance;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -18,7 +18,7 @@ import org.apache.tools.ant.types.FileSet;
 import org.objectweb.asm.ClassReader;
 
 import com.feedly.cassandra.FeedlyLogFormatter;
-import com.feedly.cassandra.bean.BeanUtils;
+import com.feedly.cassandra.entity.EntityUtils;
 
 import feedly.net.sf.cglib.transform.AbstractTransformTask;
 import feedly.net.sf.cglib.transform.ClassTransformer;
@@ -132,8 +132,8 @@ public class ColumnFamilyTransformTask extends AbstractTransformTask
     {
         try
         {
-            AddInitTransformer init = new AddInitTransformer(BeanUtils.class.getMethod("initBitSet", Object.class));
-            AddInterfaceTransformer iface = new AddInterfaceTransformer(IEnhancedBean.class);
+            AddInitTransformer init = new AddInitTransformer(EntityUtils.class.getMethod("initBitSet", Object.class));
+            AddInterfaceTransformer iface = new AddInterfaceTransformer(IEnhancedEntity.class);
             // AddPropertyTransformer prop = new AddPropertyTransformer(new
             // String[]{"modifiedFields"}, new
             // Type[]{Type.getType(BitSet.class)});

@@ -1,9 +1,9 @@
-package com.feedly.cassandra.bean.enhance;
+package com.feedly.cassandra.entity.enhance;
 
 import java.util.BitSet;
 
 //should never be directly implemented
-public interface IEnhancedBean
+public interface IEnhancedEntity
 {
     public BitSet getModifiedFields();
     public void setModifiedFields(BitSet b);

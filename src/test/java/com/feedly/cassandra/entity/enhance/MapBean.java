@@ -1,4 +1,4 @@
-package com.feedly.cassandra.bean.enhance;
+package com.feedly.cassandra.entity.enhance;
 
 import java.lang.reflect.Field;
 import java.util.HashMap;
@@ -10,7 +10,7 @@ import com.feedly.cassandra.anno.Column;
 import com.feedly.cassandra.anno.ColumnFamily;
 import com.feedly.cassandra.anno.RowKey;
 import com.feedly.cassandra.anno.UnmappedColumnHandler;
-import com.feedly.cassandra.bean.BeanUtils;
+import com.feedly.cassandra.entity.EntityUtils;
 
 @ColumnFamily(name="mapbean")
 public class MapBean implements Comparable<MapBean>, Cloneable
@@ -84,7 +84,7 @@ public class MapBean implements Comparable<MapBean>, Cloneable
     public boolean equals(Object obj)
     {
         if(obj instanceof MapBean)
-            return BeanUtils.beanFieldsEqual(this, obj);
+            return EntityUtils.beanFieldsEqual(this, obj);
 
         return false;
     }

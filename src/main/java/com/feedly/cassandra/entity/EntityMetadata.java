@@ -1,4 +1,4 @@
-package com.feedly.cassandra.bean;
+package com.feedly.cassandra.entity;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
@@ -23,9 +23,9 @@ import com.feedly.cassandra.anno.Column;
 import com.feedly.cassandra.anno.RowKey;
 import com.feedly.cassandra.anno.UnmappedColumnHandler;
 
-public class BeanMetadata<V>
+public class EntityMetadata<V>
 {
-    private static final Logger _logger = LoggerFactory.getLogger(BeanMetadata.class.getName());
+    private static final Logger _logger = LoggerFactory.getLogger(EntityMetadata.class.getName());
     
     private final Map<String, PropertyMetadata> _propsByName, _propsByPhysicalName;
     private final List<PropertyMetadata> _props;
@@ -34,7 +34,6 @@ public class BeanMetadata<V>
     private final Class<V> _clazz;
     private final PropertyMetadata _keyMeta;
     private final PropertyMetadata _unmappedHandler;
-    private final byte[][] _physicalPropertyNames;
     private final boolean _useCompositeColumns;
     
     static final Set<Class<?>> ALLOWED_TYPES;
@@ -54,7 +53,7 @@ public class BeanMetadata<V>
         return ALLOWED_TYPES;
     }
     
-    public BeanMetadata(Class<V> beanClass, boolean forceCompositeColumns)
+    public EntityMetadata(Class<V> beanClass, boolean forceCompositeColumns)
     {
         _clazz = beanClass;
         Set<Annotation> beanAnnos = new HashSet<Annotation>();
@@ -163,10 +162,6 @@ public class BeanMetadata<V>
         List<PropertyMetadata> sorted = new ArrayList<PropertyMetadata>(props.values());
         Collections.sort(sorted);
         _props = Collections.unmodifiableList(sorted);
-        
-        _physicalPropertyNames = new byte[_props.size()][];
-        for(int i = _props.size() - 1; i >= 0; i--)
-            _physicalPropertyNames[i] = _props.get(i).getPhysicalNameBytes();
     }
 
 
@@ -185,7 +180,7 @@ public class BeanMetadata<V>
         {
             setter = _clazz.getMethod(name, prop.getType());
             
-            if(!BeanUtils.isValidSetter(setter))
+            if(!EntityUtils.isValidSetter(setter))
                 return null;
             
             return setter;
@@ -208,7 +203,7 @@ public class BeanMetadata<V>
         {
             getter = _clazz.getMethod(name);
             
-            if(!getter.getReturnType().equals(prop.getType()) || !BeanUtils.isValidGetter(getter))
+            if(!getter.getReturnType().equals(prop.getType()) || !EntityUtils.isValidGetter(getter))
                 return null;
             
             return getter;
@@ -240,11 +235,7 @@ public class BeanMetadata<V>
     {
         return _props;
     }
-    
-    public byte[][] getPhysicalPropertyNameBytes()
-    {
-        return _physicalPropertyNames;
-    }
+  
     
     public Set<PropertyMetadata> getAnnotatedProperties(Class<? extends Annotation> annoType)
     {
@@ -282,8 +273,8 @@ public class BeanMetadata<V>
     @Override
     public boolean equals(Object obj)
     {
-        if(obj instanceof BeanMetadata<?>)
-            return _clazz.equals(((BeanMetadata<?>) obj)._clazz);
+        if(obj instanceof EntityMetadata<?>)
+            return _clazz.equals(((EntityMetadata<?>) obj)._clazz);
             
         return false;
     }

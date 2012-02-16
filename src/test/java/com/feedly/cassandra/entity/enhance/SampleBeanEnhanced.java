@@ -1,4 +1,4 @@
-package com.feedly.cassandra.bean.enhance;
+package com.feedly.cassandra.entity.enhance;
 
 import java.util.BitSet;
 
@@ -10,15 +10,15 @@ import com.feedly.cassandra.anno.Column;
  * 
  * @author kireet
  */
-public class SampleBeanEnhanced implements IEnhancedBean
+public class SampleBeanEnhanced implements IEnhancedEntity
 {
     private BitSet $cglib_prop_modifiedFields;
     
     private void initBitSet(Object o)
     {
-        if(o instanceof IEnhancedBean)
+        if(o instanceof IEnhancedEntity)
         {
-            ((IEnhancedBean) o).setModifiedFields(new BitSet());
+            ((IEnhancedEntity) o).setModifiedFields(new BitSet());
         }
     }
     

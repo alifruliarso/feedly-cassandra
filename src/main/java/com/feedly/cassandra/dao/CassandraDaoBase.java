@@ -38,11 +38,11 @@ import org.slf4j.LoggerFactory;
 
 import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.anno.ColumnFamily;
-import com.feedly.cassandra.bean.BeanMetadata;
-import com.feedly.cassandra.bean.BeanUtils;
-import com.feedly.cassandra.bean.PropertyMetadata;
-import com.feedly.cassandra.bean.enhance.ColumnFamilyTransformTask;
-import com.feedly.cassandra.bean.enhance.IEnhancedBean;
+import com.feedly.cassandra.entity.EntityMetadata;
+import com.feedly.cassandra.entity.EntityUtils;
+import com.feedly.cassandra.entity.PropertyMetadata;
+import com.feedly.cassandra.entity.enhance.ColumnFamilyTransformTask;
+import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 
 public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
 {
@@ -53,7 +53,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     private static final BytesArraySerializer SER_BYTES = BytesArraySerializer.get();
     private static final StringSerializer SER_STRING = StringSerializer.get();
     private static final DynamicCompositeSerializer SER_COMPOSITE = new DynamicCompositeSerializer();
-    private final BeanMetadata<V> _valueMeta;
+    private final EntityMetadata<V> _entityMeta;
     private final String _columnFamily;
     private IKeyspaceFactory _keyspaceFactory;
 
@@ -100,17 +100,17 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         if(colFamily == null)
             throw new IllegalStateException(valueClass.getSimpleName() + " missing @ColumnFamily annotation");
 
-        _valueMeta = new BeanMetadata<V>(valueClass, forceCompositeColumns);
+        _entityMeta = new EntityMetadata<V>(valueClass, forceCompositeColumns);
 
-        if(!_valueMeta.getKeyMetadata().getFieldType().equals(keyClass))
-            throw new IllegalArgumentException(String.format("DAO/bean key mismatch: %s != %s",
+        if(!_entityMeta.getKeyMetadata().getFieldType().equals(keyClass))
+            throw new IllegalArgumentException(String.format("DAO/entity key mismatch: %s != %s",
                                                              keyClass.getName(),
-                                                             _valueMeta.getKeyMetadata().getFieldType().getName()));
+                                                             _entityMeta.getKeyMetadata().getFieldType().getName()));
 
 
         _columnFamily = colFamily;
 
-        _logger.info(getClass().getSimpleName(), new Object[] {"[", _columnFamily, "] -> ", _valueMeta.toString()});
+        _logger.info(getClass().getSimpleName(), new Object[] {"[", _columnFamily, "] -> ", _entityMeta.toString()});
     }
 
     public void setKeyspaceFactory(IKeyspaceFactory keyspaceFactory)
@@ -144,16 +144,16 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         return null;
     }
 
-    private IEnhancedBean asBean(V value)
+    private IEnhancedEntity asEntity(V value)
     {
         try
         {
-            return (IEnhancedBean) value;
+            return (IEnhancedEntity) value;
         }
         catch(ClassCastException cce)
         {
             throw new IllegalArgumentException(value.getClass().getSimpleName()
-                    + " was not enhanced. Bean classes must be enhanced post compilation See " + ColumnFamilyTransformTask.class.getName());
+                    + " was not enhanced. Entity classes must be enhanced post compilation See " + ColumnFamilyTransformTask.class.getName());
         }
     }
 
@@ -166,7 +166,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     @Override
     public void save(Collection<V> values)
     {
-        PropertyMetadata keyMeta = _valueMeta.getKeyMetadata();
+        PropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
         Mutator<byte[]> mutator = HFactory.createMutator(_keyspaceFactory.createKeyspace(), SER_BYTES);
 
         for(V value : values)
@@ -174,7 +174,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
             Object key = invokeGetter(keyMeta, value);
             byte[] keyBytes = serialize(key, false, keyMeta.getSerializer());
 
-            _logger.debug("inserting {}[{}]", _valueMeta.getType().getSimpleName(), key);
+            _logger.debug("inserting {}[{}]", _entityMeta.getType().getSimpleName(), key);
 
             int colCnt = saveDirtyFields(key, keyBytes, value, mutator);
             colCnt += saveUnmappedFields(key, keyBytes, value, mutator);
@@ -182,7 +182,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
             if(colCnt == 0)
                 _logger.warn("no updates for ", key);
             
-            _logger.debug("updated {} values for {}[{}]", new Object[] { colCnt, _valueMeta.getType().getSimpleName(), key });
+            _logger.debug("updated {} values for {}[{}]", new Object[] { colCnt, _entityMeta.getType().getSimpleName(), key });
         }
         
         mutator.execute();
@@ -190,9 +190,9 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         //do after execution
         for(V value : values)
         {
-            IEnhancedBean bean = asBean(value);
-            bean.getModifiedFields().clear();
-            bean.setUnmappedFieldsModified(false);
+            IEnhancedEntity entity = asEntity(value);
+            entity.getModifiedFields().clear();
+            entity.setUnmappedFieldsModified(false);
         }
         
     }
@@ -200,10 +200,10 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     @SuppressWarnings({ "rawtypes", "unchecked" })
     private int saveDirtyFields(Object key, byte[] keyBytes, V value, Mutator<byte[]> mutator)
     {
-        List<PropertyMetadata> properties = _valueMeta.getProperties();
+        List<PropertyMetadata> properties = _entityMeta.getProperties();
 
-        IEnhancedBean bean = asBean(value);
-        BitSet dirty = bean.getModifiedFields();
+        IEnhancedEntity entity = asEntity(value);
+        BitSet dirty = entity.getModifiedFields();
         int colCnt = 0;
 
         if(!dirty.isEmpty())
@@ -223,7 +223,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
                 {
                     Object propVal = invokeGetter(colMeta, value);
                     
-                    _logger.trace("{}[{}].{} = {}", new Object[] { _valueMeta.getType().getSimpleName(), key, colMeta.getName(), propVal});
+                    _logger.trace("{}[{}].{} = {}", new Object[] { _entityMeta.getType().getSimpleName(), key, colMeta.getName(), propVal});
                     
                     if(propVal != null)
                     {
@@ -318,7 +318,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
                                          PropertyMetadata colMeta,
                                          Mutator<byte[]> mutator)
     {
-        _logger.trace("{}[{}].{}:{} = {}", new Object[] {_valueMeta.getType().getSimpleName(), key, colMeta.getName(), propKey, propVal});
+        _logger.trace("{}[{}].{}:{} = {}", new Object[] {_entityMeta.getType().getSimpleName(), key, colMeta.getName(), propKey, propVal});
 
         if(propKey == null)
         {
@@ -357,10 +357,10 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     @SuppressWarnings({ "rawtypes", "unchecked" })
     private int saveUnmappedFields(Object key, byte[] keyBytes, V value, Mutator<byte[]> mutator)
     {
-        if(!asBean(value).getUnmappedFieldsModified())
+        if(!asEntity(value).getUnmappedFieldsModified())
             return 0;
 
-        PropertyMetadata unmappedMeta = _valueMeta.getUnmappedHandler();
+        PropertyMetadata unmappedMeta = _entityMeta.getUnmappedHandler();
 
         if(unmappedMeta == null)
             return 0;
@@ -378,7 +378,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         {
 
             Object colVal = entry.getValue();
-            _logger.trace("{}[{}].{} = {}", new Object[] {_valueMeta.getType().getSimpleName(), key, entry.getKey(), colVal});
+            _logger.trace("{}[{}].{} = {}", new Object[] {_entityMeta.getType().getSimpleName(), key, entry.getKey(), colVal});
 
             if(!(entry.getKey() instanceof String))
                 throw new IllegalArgumentException("only string keys supported for unmapped properties");
@@ -429,11 +429,11 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
                 return null;
         }
 
-        if(isColName && _valueMeta.useCompositeColumns())
+        if(isColName && _entityMeta.useCompositeColumns())
             return SER_COMPOSITE.toBytes(new DynamicComposite(val));
         
         if(serializer == null)
-            serializer = BeanUtils.getSerializer(val.getClass());
+            serializer = EntityUtils.getSerializer(val.getClass());
         
         if(serializer == null)
             throw new IllegalArgumentException("unable to serialize " + val);
@@ -448,19 +448,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     
     public V loadPartial(K key, V value, Object from, Object to)
     {
-        byte[] fromBytes = null, toBytes = null;
-        
-        if(from instanceof CollectionProperty)
-            fromBytes = collectionPropertyKey((CollectionProperty) from, ComponentEquality.EQUAL);
-        else
-            fromBytes = serialize(from, true, null);
-        
-        if(to instanceof CollectionProperty)
-            toBytes = collectionPropertyKey((CollectionProperty) to, ComponentEquality.EQUAL);
-        else
-            toBytes = serialize(to, true, null);
-        
-        return loadFromGet(key, value, null, fromBytes, toBytes);
+        return loadFromGet(key, value, null, propertyKey(from), propertyKey(to));
     }
     
     public V loadPartial(K key, V value, Set<? extends Object> includes, Set<String> excludes)
@@ -505,19 +493,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
             throw new IllegalArgumentException("key and value list must be same size");
         }
         
-        byte[] fromBytes = null, toBytes = null;
-        
-        if(from instanceof CollectionProperty)
-            fromBytes = collectionPropertyKey((CollectionProperty) from, ComponentEquality.EQUAL);
-        else
-            fromBytes = serialize(from, true, null);
-        
-        if(to instanceof CollectionProperty)
-            toBytes = collectionPropertyKey((CollectionProperty) to, ComponentEquality.EQUAL);
-        else
-            toBytes = serialize(to, true, null);
-        
-        return bulkLoadFromMultiGet(keys, values, null, fromBytes, toBytes, true);
+        return bulkLoadFromMultiGet(keys, values, null, propertyKey(from), propertyKey(to), true);
     }
     
     public List<V> bulkLoadPartial(List<K> keys, List<V> values, Set<? extends Object> includes, Set<String> excludes)
@@ -533,6 +509,74 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
 
         values = bulkLoadFromMultiGet(keys, values, colNames, null, null, true);
 
+        return addFullCollectionProperties(keys, values, fullCollectionProperties);
+    }
+    
+    private V uniqueValue(Collection<V> values)
+    {
+        if(values == null || values.isEmpty())
+            return null;
+        
+        if(values.size() > 1)
+            throw new IllegalStateException("non-unique value");
+        
+        return values.iterator().next();
+    }
+    
+    public V findByIndex(V template)
+    {
+        return uniqueValue(bulkFindByIndex(template));
+    }
+    
+
+    @Override
+    public V findByIndexPartial(V template, Object start, Object end)
+    {
+        return uniqueValue(bulkFindByIndexPartial(template, start, end));
+    }
+
+    @Override
+    public V findByIndexPartial(V template, Set<? extends Object> includes, Set<String> excludes)
+    {
+        return uniqueValue(bulkFindByIndexPartial(template, includes, excludes));
+    }
+
+    public Collection<V> bulkFindByIndex(V template)
+    {
+        return bulkFindByIndexPartial(template, null, null, null);
+    }
+
+
+    @Override
+    public Collection<V> bulkFindByIndexPartial(V template, Object start, Object end)
+    {
+        return bulkFindByIndexPartial(template, propertyKey(start), propertyKey(end), null);
+    }
+    
+    @SuppressWarnings("unchecked")
+    @Override
+    public Collection<V> bulkFindByIndexPartial(V template, Set<? extends Object> includes, Set<String> excludes)
+    {
+        if(includes != null && excludes != null)
+            throw new IllegalArgumentException("either includes or excludes should be specified, not both");
+        
+        if(includes != null && excludes != null)
+            throw new IllegalArgumentException("either includes or excludes should be specified, not both");
+        
+        List<byte[]> colNames = new ArrayList<byte[]>();
+        List<PropertyMetadata> fullCollectionProperties = addPartialColumns(colNames, includes, excludes);
+
+        List<V> values = bulkFindByIndexPartial(template, null, null, colNames);
+        List<K> keys = new ArrayList<K>(values.size());
+        PropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
+        for(V v : values)
+            keys.add((K) invokeGetter(keyMeta, v));
+        
+        return addFullCollectionProperties(keys, values, fullCollectionProperties);
+    }
+
+    private List<V> addFullCollectionProperties(List<K> keys, List<V> values, List<PropertyMetadata> fullCollectionProperties)
+    {
         if(fullCollectionProperties != null)
         {
             for(PropertyMetadata pm : fullCollectionProperties)
@@ -548,43 +592,33 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
                 values = bulkLoadFromMultiGet(keys, values, null, colBytes, colBytesEnd, true);
             }
         }
-        
         return values;
     }
-    
-    public V findByIndex(V value)
-    {
-        Collection<V> values = bulkFindByIndex(value);
-        
-        if(values == null || values.isEmpty())
-            return null;
-        
-        if(values.size() > 1)
-            throw new IllegalStateException("non-unique value");
-        
-        return values.iterator().next();
-    }
-    
+
     @SuppressWarnings("unchecked")
-    public Collection<V> bulkFindByIndex(V value)
+    private List<V> bulkFindByIndexPartial(V template, byte[] startBytes, byte[] endBytes, List<byte[]> colNames)
     {
-        IEnhancedBean bean = asBean(value);
-        BitSet dirty = bean.getModifiedFields();
-        List<PropertyMetadata> properties = _valueMeta.getProperties();
+        IEnhancedEntity entity = asEntity(template);
+        BitSet dirty = entity.getModifiedFields();
+        List<PropertyMetadata> properties = _entityMeta.getProperties();
         for(int i = dirty.nextSetBit(0); i >= 0; i = dirty.nextSetBit(i + 1))
         {
             PropertyMetadata pm = properties.get(i);
             if(pm.isIndexed())
             {
-                Object propVal = invokeGetter(pm, value);
+                Object propVal = invokeGetter(pm, template);
                 if(propVal != null)
                 {
-                    PropertyMetadata keyMeta = _valueMeta.getKeyMetadata();
+                    PropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
                     IndexedSlicesQuery<byte[], byte[], byte[]> query = HFactory.createIndexedSlicesQuery(_keyspaceFactory.createKeyspace(), SER_BYTES, SER_BYTES, SER_BYTES);
                     query.setColumnFamily(_columnFamily);
                     query.setRowCount(ROW_RANGE_SIZE);
                     query.addEqualsExpression(pm.getPhysicalNameBytes(), serialize(propVal, false, pm.getSerializer()));
-                    query.setRange(null, null, false, COL_RANGE_SIZE);
+                    
+                    if(colNames != null)
+                        query.setColumnNames(colNames);
+                    else
+                        query.setRange(startBytes, endBytes, false, COL_RANGE_SIZE);
                     
                     OrderedRows<byte[],byte[],byte[]> rows = query.execute().get();
                     
@@ -609,7 +643,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
                                 checkDuplicateKey = false;
                             }
                             
-                            value = fromColumnSlice(key, null, keyMeta, row.getKey(), null, row.getColumnSlice(), null);
+                            V value = fromColumnSlice(key, null, keyMeta, row.getKey(), null, row.getColumnSlice(), endBytes);
                             
                             if(value != null)
                                 values.add(value);
@@ -632,7 +666,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         
         throw new IllegalArgumentException("no applicable index found.");
     }
-    
+
     private Set<? extends Object> partialProperties(Set<? extends Object> includes, Set<String> excludes)
     {
         if(includes != null && excludes != null)
@@ -651,16 +685,16 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         }
         
         Set<Object> props = new HashSet<Object>();
-        if(_valueMeta.getUnmappedHandler() == null)
+        if(_entityMeta.getUnmappedHandler() == null)
         {
             for(String exclude : excludes)
             {
-                if(_valueMeta.getProperty(exclude) == null)
+                if(_entityMeta.getProperty(exclude) == null)
                     throw new IllegalArgumentException("no such property " + exclude);
             }
         }
 
-        for(PropertyMetadata pm : _valueMeta.getProperties())
+        for(PropertyMetadata pm : _entityMeta.getProperties())
         {
             if(!excludes.contains(pm.getName()))
                 props.add(pm.getName());
@@ -676,7 +710,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     {
         _logger.debug(String.format("loading {}[{}]", _columnFamily, key));
 
-        PropertyMetadata keyMeta = _valueMeta.getKeyMetadata();
+        PropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
         byte[] keyBytes = ((Serializer) keyMeta.getSerializer()).toBytes(key);
 
         SliceQuery<byte[], byte[], byte[]> query = buildSliceQuery(keyBytes);
@@ -693,7 +727,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     @SuppressWarnings({ "rawtypes", "unchecked" })
     private List<V> bulkLoadFromMultiGet(Collection<K> keys, List<V> values, List<byte[]> colNames, byte[] first, byte[] last, boolean maintainOrder)
     {
-        PropertyMetadata keyMeta = _valueMeta.getKeyMetadata();
+        PropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
         MultigetSliceQuery<byte[], byte[], byte[]> query = HFactory.createMultigetSliceQuery(_keyspaceFactory.createKeyspace(),
                                                                                              SER_BYTES,
                                                                                              SER_BYTES,
@@ -706,7 +740,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         {
             _logger.debug("loading {}[{}]", _columnFamily, key);
 
-            keyBytes[i] = ((Serializer) _valueMeta.getKeyMetadata().getSerializer()).toBytes(key);
+            keyBytes[i] = ((Serializer) _entityMeta.getKeyMetadata().getSerializer()).toBytes(key);
             i++;
         }
 
@@ -774,8 +808,8 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
             if(property instanceof String)
             {
                 String strProp = (String) property;
-                PropertyMetadata pm = _valueMeta.getProperty(strProp);
-                if(_valueMeta.getUnmappedHandler() == null && pm == null)
+                PropertyMetadata pm = _entityMeta.getProperty(strProp);
+                if(_entityMeta.getUnmappedHandler() == null && pm == null)
                     throw new IllegalArgumentException("unrecognized property " + strProp);
                 
                 //collections need to be handled separately
@@ -796,7 +830,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
                     CollectionProperty cp = (CollectionProperty) property;
                     colNameBytes = collectionPropertyKey(cp, ComponentEquality.EQUAL);
                 }
-                else if(_valueMeta.getUnmappedHandler() == null)
+                else if(_entityMeta.getUnmappedHandler() == null)
                     throw new IllegalArgumentException("property must be string, but encountered " + property);
                 else
                     colNameBytes = serialize(property, true, null);
@@ -811,9 +845,17 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         return fullCollectionProperties;
     }
     
+    private byte[] propertyKey(Object from)
+    {
+        if(from instanceof CollectionProperty)
+            return collectionPropertyKey((CollectionProperty) from, ComponentEquality.EQUAL);
+        else
+            return serialize(from, true, null);
+    }
+    
     private byte[] collectionPropertyKey(CollectionProperty cp, ComponentEquality keyEq)
     {
-        PropertyMetadata pm = _valueMeta.getProperty(cp.getProperty());
+        PropertyMetadata pm = _entityMeta.getProperty(cp.getProperty());
         
         if(pm == null || !pm.isCollection())
             throw new IllegalArgumentException("property " + cp.getProperty() + " is not a collection");
@@ -880,21 +922,21 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         try
         {
             if(value == null)
-                value = _valueMeta.getType().newInstance();
+                value = _entityMeta.getType().newInstance();
         }
         catch(Exception ex)
         {
-            throw new IllegalArgumentException("error instantiating value object of type " + _valueMeta.getClass(), ex);
+            throw new IllegalArgumentException("error instantiating value object of type " + _entityMeta.getClass(), ex);
         }
 
         
         Map<Object, Object> unmapped = null;
         Map<String, Object> collections = null; //cache the collections to avoid reflection invocations in loop
-        if(_valueMeta.useCompositeColumns())
+        if(_entityMeta.useCompositeColumns())
             collections = new HashMap<String, Object>();
         
-        if(_valueMeta.getUnmappedHandler() != null)
-            unmapped = (Map<Object, Object>) invokeGetter(_valueMeta.getUnmappedHandler(), value);
+        if(_entityMeta.getUnmappedHandler() != null)
+            unmapped = (Map<Object, Object>) invokeGetter(_entityMeta.getUnmappedHandler(), value);
         
         int size = columns.size();
         for(int i = 0; i < size; i++)
@@ -902,7 +944,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
             HColumn<byte[], byte[]> col = columns.get(i);
             String pname = null;
             Object collectionKey = null;
-            if(_valueMeta.useCompositeColumns())
+            if(_entityMeta.useCompositeColumns())
             {
                 DynamicComposite composite = SER_COMPOSITE.fromBytes(col.getName());
                 pname = (String) composite.get(0);
@@ -912,7 +954,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
             else
                 pname = SER_STRING.fromBytes(col.getName());
             
-            PropertyMetadata pm = _valueMeta.getPropertyByPhysicalName(pname);
+            PropertyMetadata pm = _entityMeta.getPropertyByPhysicalName(pname);
 
             if(pm == null)
             {
@@ -970,9 +1012,9 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
 
         invokeSetter(keyMeta, value, key);
 
-        IEnhancedBean bean = asBean(value);
-        bean.getModifiedFields().clear();
-        bean.setUnmappedFieldsModified(false);
+        IEnhancedEntity entity = asEntity(value);
+        entity.getModifiedFields().clear();
+        entity.setUnmappedFieldsModified(false);
         
         return value;
     }
@@ -988,7 +1030,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         Object pval = pm.getSerializer().fromByteBuffer(col.getValueBytes());
         
         map.put(collectionKey, pval); 
-        _logger.debug("{}[{}].{}:{} = {}", new Object[] {_valueMeta.getType().getSimpleName(), key, pname, collectionKey, pval});
+        _logger.debug("{}[{}].{}:{} = {}", new Object[] {_entityMeta.getType().getSimpleName(), key, pname, collectionKey, pval});
     }
 
     private void loadListProperty(K key,
@@ -1009,14 +1051,14 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
 
         list.add(pval); 
             
-        _logger.trace("{}[{}].{}:{} = {}", new Object[]{_valueMeta.getType().getSimpleName(), key, pname, collectionKey, pval});
+        _logger.trace("{}[{}].{}:{} = {}", new Object[]{_entityMeta.getType().getSimpleName(), key, pname, collectionKey, pval});
     }
 
     private void loadProperty(K key, V value, HColumn<byte[], byte[]> col, String pname, PropertyMetadata pm)
     {
         Object pval = pm.getSerializer().fromBytes(col.getValue());
         invokeSetter(pm, value, pval);
-        _logger.trace("{}[{}].{} = {}", new Object[]{_valueMeta.getType().getSimpleName(), key, pname, pval});
+        _logger.trace("{}[{}].{} = {}", new Object[]{_entityMeta.getType().getSimpleName(), key, pname, pval});
     }
 
     private Map<Object, Object> loadUnmappedProperty(K key,
@@ -1025,7 +1067,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
                                                   HColumn<byte[], byte[]> col,
                                                   Map<Object, Object> unmapped)
     {
-        PropertyMetadata pm = _valueMeta.getUnmappedHandler();
+        PropertyMetadata pm = _entityMeta.getUnmappedHandler();
         if(pm != null)
         {
             if(unmapped == null)
@@ -1042,16 +1084,16 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
             if(pval != null)
             {
                 unmapped.put(pname, pval);
-                _logger.trace("{}[{}].{} = {}", new Object[] {_valueMeta.getType().getSimpleName(), key, pname, pval});
+                _logger.trace("{}[{}].{} = {}", new Object[] {_entityMeta.getType().getSimpleName(), key, pname, pval});
             }
             else
             {
-                _logger.info("unrecognized value for {}[{}].{}, skipping", new Object[] { _valueMeta.getType().getSimpleName(), key, pname});
+                _logger.info("unrecognized value for {}[{}].{}, skipping", new Object[] { _entityMeta.getType().getSimpleName(), key, pname});
             }
         }
         else
         {
-            _logger.info("unmapped value for {}[{}].{}, skipping", new Object[] { _valueMeta.getType().getSimpleName(), key, pname});
+            _logger.info("unmapped value for {}[{}].{}, skipping", new Object[] { _entityMeta.getType().getSimpleName(), key, pname});
         }
         return unmapped;
     }
@@ -1079,6 +1121,5 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
             throw new IllegalArgumentException("unexpected error invoking " + pm.getGetter(), e);
         }
     }
- 
     
 }

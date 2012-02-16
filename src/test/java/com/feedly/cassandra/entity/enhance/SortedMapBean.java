@@ -1,11 +1,11 @@
-package com.feedly.cassandra.bean.enhance;
+package com.feedly.cassandra.entity.enhance;
 
 import java.util.SortedMap;
 
 import com.feedly.cassandra.anno.Column;
 import com.feedly.cassandra.anno.ColumnFamily;
 import com.feedly.cassandra.anno.RowKey;
-import com.feedly.cassandra.bean.BeanUtils;
+import com.feedly.cassandra.entity.EntityUtils;
 
 @ColumnFamily(name="sortedmapbean")
 public class SortedMapBean implements Comparable<SortedMapBean>
@@ -66,7 +66,7 @@ public class SortedMapBean implements Comparable<SortedMapBean>
     public boolean equals(Object obj)
     {
         if(obj instanceof SortedMapBean)
-            return BeanUtils.beanFieldsEqual(this, obj);
+            return EntityUtils.beanFieldsEqual(this, obj);
 
         return false;
     }

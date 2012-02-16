@@ -1,4 +1,4 @@
-package com.feedly.cassandra.bean.enhance;
+package com.feedly.cassandra.entity.enhance;
 
 import org.objectweb.asm.Type;
 
@@ -19,7 +19,7 @@ public class AddInterfaceTransformer extends ClassEmitterTransformer
     {
         Type[] all = new Type[interfaces.length + 1];
         System.arraycopy(interfaces, 0, all, 0, interfaces.length);
-        all[all.length - 1] = Type.getType(IEnhancedBean.class);
+        all[all.length - 1] = Type.getType(IEnhancedEntity.class);
         super.begin_class(version, access, className, superType, all, source);
     }
 }

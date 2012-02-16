@@ -7,7 +7,7 @@ import java.lang.annotation.Target;
 
 import me.prettyprint.hector.api.Serializer;
 
-import com.feedly.cassandra.bean.ByteIndicatorSerializer;
+import com.feedly.cassandra.entity.ByteIndicatorSerializer;
 
 
 /**

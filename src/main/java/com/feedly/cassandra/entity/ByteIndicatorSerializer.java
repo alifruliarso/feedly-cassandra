@@ -1,4 +1,4 @@
-package com.feedly.cassandra.bean;
+package com.feedly.cassandra.entity;
 
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
@@ -63,7 +63,7 @@ public class ByteIndicatorSerializer extends AbstractSerializer<Object>
         if(indicator == null)
             throw new IllegalArgumentException(obj.getClass() + " not serializable by this class");
         
-        byte[] val = ((Serializer) BeanUtils.getSerializer(obj.getClass())).toBytes(obj);
+        byte[] val = ((Serializer) EntityUtils.getSerializer(obj.getClass())).toBytes(obj);
         ByteBuffer buffer = ByteBuffer.allocate(val.length + 1);
         buffer.put(indicator);
         buffer.put(val);
@@ -84,7 +84,7 @@ public class ByteIndicatorSerializer extends AbstractSerializer<Object>
         if(clazz == null)
             throw new IllegalArgumentException("invalid indicator byte " + indicator);
         
-        return BeanUtils.getSerializer(clazz).fromByteBuffer(byteBuffer);
+        return EntityUtils.getSerializer(clazz).fromByteBuffer(byteBuffer);
     }
 
 }

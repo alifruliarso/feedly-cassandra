@@ -90,9 +90,9 @@
             <phase>process-test-classes</phase>
             <configuration>
               <target>
-                <taskdef name="enhance" classname="com.feedly.cassandra.bean.enhance.ColumnFamilyTransformTask" classpathref="maven.runtime.classpath" />
+                <taskdef name="enhance" classname="com.feedly.cassandra.entity.enhance.ColumnFamilyTransformTask" classpathref="maven.runtime.classpath" />
                 <enhance>
-                  <fileset dir="${project.build.testOutputDirectory}/com/feedly/cassandra/bean/" />
+                  <fileset dir="${project.build.testOutputDirectory}/com/feedly/cassandra/entity/" />
                 </enhance>
               </target>
             </configuration>

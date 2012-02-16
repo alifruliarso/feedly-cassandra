@@ -11,11 +11,11 @@ import org.apache.cassandra.io.compress.SnappyCompressor;
 import org.junit.Test;
 
 import com.feedly.cassandra.anno.ColumnFamily;
-import com.feedly.cassandra.bean.enhance.CompositeIndexedBean;
-import com.feedly.cassandra.bean.enhance.IndexedBean;
-import com.feedly.cassandra.bean.enhance.ListBean;
-import com.feedly.cassandra.bean.enhance.SampleBean;
-import com.feedly.cassandra.bean.upd_enhance.SampleBean2;
+import com.feedly.cassandra.entity.enhance.CompositeIndexedBean;
+import com.feedly.cassandra.entity.enhance.IndexedBean;
+import com.feedly.cassandra.entity.enhance.ListBean;
+import com.feedly.cassandra.entity.enhance.SampleBean;
+import com.feedly.cassandra.entity.upd_enhance.SampleBean2;
 import com.feedly.cassandra.test.CassandraServiceTestBase;
 
 public class PersistenceManagerSchemaTest extends CassandraServiceTestBase
