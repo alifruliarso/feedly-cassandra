@@ -18,7 +18,7 @@ public class ListBean implements Comparable<ListBean>, Cloneable
     @Column
     private String strProp1;
     
-    @Column(indexed=true)
+    @Column(hashIndexed=true)
     private String strProp;
     
     @Column

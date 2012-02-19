@@ -34,8 +34,18 @@ public @interface Column
     public Class<? extends Serializer> serializer() default Serializer.class;
     
     /**
-     * Should this column be indexed using native cassandra secondary indexes?
-     * @return true if the column should be indexed
+     * Should this column be hashed indexed? Hash indexes provide unique lookup capability but not range searches. If range searches are
+     * not required, using a hash index is preferacble as native cassandra secondary indexes may be used.
+     * @return true if the column should be hash indexed
      */
-    public boolean indexed() default false;
+    public boolean hashIndexed() default false;
+
+    /**
+     * Should this column be range indexed? Range indexes provide the ability to do range lookups as opposed to hash indexes which only allow
+     * exact value lookups. The downside of range indexes is write performance is significantly worse as custom built indexes must be used,
+     * resulting in multiple cassandra operations per save. 
+     * 
+     * @return true if the column should be range indexed
+     */
+    public boolean rangeIndexed() default false;
 }

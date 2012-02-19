@@ -92,7 +92,7 @@ public class EntityMetadata<V>
                         throw new IllegalArgumentException("@RowKey may only be used on one field.");
 
                     RowKey anno = f.getAnnotation(RowKey.class);
-                    keyMeta = new PropertyMetadata(f, null, false, getter, setter, serializerClass(anno.value()),  false);
+                    keyMeta = new PropertyMetadata(f, null, false, false, getter, setter, serializerClass(anno.value()),  false);
                 }
 
                 if(f.isAnnotationPresent(UnmappedColumnHandler.class))
@@ -104,7 +104,7 @@ public class EntityMetadata<V>
                         throw new IllegalArgumentException("@UnmappedColumnHandler may only be used on a Map or SortedMap, not sub-interfaces or classes.");
                     
                     UnmappedColumnHandler anno = f.getAnnotation(UnmappedColumnHandler.class);
-                    unmappedHandler = new PropertyMetadata(f, null, false, getter, setter, serializerClass(anno.value()), _useCompositeColumns);
+                    unmappedHandler = new PropertyMetadata(f, null, false, false, getter, setter, serializerClass(anno.value()), _useCompositeColumns);
                 }
 
                 
@@ -116,7 +116,7 @@ public class EntityMetadata<V>
                         col = f.getName();
                     
 
-                    PropertyMetadata pm = new PropertyMetadata(f, col, anno.indexed(), getter, setter, serializerClass(anno.serializer()), _useCompositeColumns);
+                    PropertyMetadata pm = new PropertyMetadata(f, col, anno.hashIndexed(), anno.rangeIndexed(), getter, setter, serializerClass(anno.serializer()), _useCompositeColumns);
                     props.put(f.getName(), pm);
                     propsByPhysical.put(col, pm);
 
@@ -125,7 +125,7 @@ public class EntityMetadata<V>
                         if(keyMeta != null)
                             throw new IllegalArgumentException(f.getName() + ": @UnmappedColumnHandler should not also be annotated as a mapped @Column.");
 
-                        keyMeta = new PropertyMetadata(f, null, false, getter, setter, serializerClass(anno.serializer()), _useCompositeColumns);
+                        keyMeta = new PropertyMetadata(f, null, false, false, getter, setter, serializerClass(anno.serializer()), _useCompositeColumns);
                     }
 
                     for(Annotation a : f.getDeclaredAnnotations())

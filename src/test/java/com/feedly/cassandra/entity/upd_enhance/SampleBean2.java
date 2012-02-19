@@ -18,7 +18,7 @@ public class SampleBean2 implements Cloneable, Comparable<SampleBean2>
     @RowKey
     private Long rowKey;
     
-    @Column(col="s", indexed=true)
+    @Column(col="s", hashIndexed=true)
     private String strVal;
     
     @Column

@@ -16,28 +16,28 @@ import java.util.Set;
  */
 public interface ICassandraDao<K, V>
 {
-    public void save(V value);
-    public void save(Collection<V> values);
+    public void put(V value);
+    public void mput(Collection<V> values);
 
     //passing in a value updates and returns the value
-    public V loadPartial(K key, V value, Object start, Object end); //end is inclusive
-    public V loadPartial(K key, V value, Set<? extends Object> includes, Set<String> excludes);//passing excludes will omit unmapped properties
+    public V get(K key, V value, Object start, Object end); //end is inclusive
+    public V get(K key, V value, Set<? extends Object> includes, Set<String> excludes);//passing excludes will omit unmapped properties
 
-    public List<V> bulkLoadPartial(List<K> keys, List<V> values, Object start, Object end); //end is inclusive
-    public List<V> bulkLoadPartial(List<K> keys, List<V> values, Set<? extends Object> includes, Set<String> excludes);
+    public List<V> mget(List<K> keys, List<V> values, Object start, Object end); //end is inclusive
+    public List<V> mget(List<K> keys, List<V> values, Set<? extends Object> includes, Set<String> excludes);
     
     
-    public V load(K key);
-    public Collection<V> bulkLoad(Collection<K> keys);
+    public V get(K key);
+    public Collection<V> mget(Collection<K> keys);
 
     /*
      * convenience methods that must find at most 1 value
      */
-    public V findByIndex(V template); 
-    public V findByIndexPartial(V template, Object start, Object end); //end is inclusive
-    public V findByIndexPartial(V template, Set<? extends Object> includes, Set<String> excludes);
+    public V find(V template); 
+    public V find(V template, Object start, Object end); //end is inclusive
+    public V find(V template, Set<? extends Object> includes, Set<String> excludes);
     
-    public Collection<V> bulkFindByIndex(V template);
-    public Collection<V> bulkFindByIndexPartial(V template, Object start, Object end); //end is inclusive
-    public Collection<V> bulkFindByIndexPartial(V template, Set<? extends Object> includes, Set<String> excludes);
+    public Collection<V> mfind(V template);
+    public Collection<V> mfind(V template, Object start, Object end); //end is inclusive
+    public Collection<V> mfind(V template, Set<? extends Object> includes, Set<String> excludes);
 }

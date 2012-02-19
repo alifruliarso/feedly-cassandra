@@ -158,13 +158,13 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     }
 
     @Override
-    public void save(V value)
+    public void put(V value)
     {
-        save(Collections.singleton(value));
+        mput(Collections.singleton(value));
     }
 
     @Override
-    public void save(Collection<V> values)
+    public void mput(Collection<V> values)
     {
         PropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
         Mutator<byte[]> mutator = HFactory.createMutator(_keyspaceFactory.createKeyspace(), SER_BYTES);
@@ -441,17 +441,17 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         return serializer.toBytes(val);
     }
 
-    public V load(K key)
+    public V get(K key)
     {
         return loadFromGet(key, null, null, null, null);
     }
     
-    public V loadPartial(K key, V value, Object from, Object to)
+    public V get(K key, V value, Object from, Object to)
     {
         return loadFromGet(key, value, null, propertyKey(from), propertyKey(to));
     }
     
-    public V loadPartial(K key, V value, Set<? extends Object> includes, Set<String> excludes)
+    public V get(K key, V value, Set<? extends Object> includes, Set<String> excludes)
     {
         _logger.debug("loading {}[{}]", _columnFamily, key);
         
@@ -481,12 +481,12 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         return value;
     }
 
-    public Collection<V> bulkLoad(Collection<K> keys)
+    public Collection<V> mget(Collection<K> keys)
     {
         return bulkLoadFromMultiGet(keys, null, null, null, null, false);
     }
     
-    public List<V> bulkLoadPartial(List<K> keys, List<V> values, Object from, Object to)
+    public List<V> mget(List<K> keys, List<V> values, Object from, Object to)
     {
         if(values != null && keys.size() != values.size())
         {
@@ -496,7 +496,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         return bulkLoadFromMultiGet(keys, values, null, propertyKey(from), propertyKey(to), true);
     }
     
-    public List<V> bulkLoadPartial(List<K> keys, List<V> values, Set<? extends Object> includes, Set<String> excludes)
+    public List<V> mget(List<K> keys, List<V> values, Set<? extends Object> includes, Set<String> excludes)
     {        
         if(includes != null && excludes != null)
             throw new IllegalArgumentException("either includes or excludes should be specified, not both");
@@ -523,39 +523,39 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         return values.iterator().next();
     }
     
-    public V findByIndex(V template)
+    public V find(V template)
     {
-        return uniqueValue(bulkFindByIndex(template));
+        return uniqueValue(mfind(template));
     }
     
 
     @Override
-    public V findByIndexPartial(V template, Object start, Object end)
+    public V find(V template, Object start, Object end)
     {
-        return uniqueValue(bulkFindByIndexPartial(template, start, end));
+        return uniqueValue(mfind(template, start, end));
     }
 
     @Override
-    public V findByIndexPartial(V template, Set<? extends Object> includes, Set<String> excludes)
+    public V find(V template, Set<? extends Object> includes, Set<String> excludes)
     {
-        return uniqueValue(bulkFindByIndexPartial(template, includes, excludes));
+        return uniqueValue(mfind(template, includes, excludes));
     }
 
-    public Collection<V> bulkFindByIndex(V template)
+    public Collection<V> mfind(V template)
     {
         return bulkFindByIndexPartial(template, null, null, null);
     }
 
 
     @Override
-    public Collection<V> bulkFindByIndexPartial(V template, Object start, Object end)
+    public Collection<V> mfind(V template, Object start, Object end)
     {
         return bulkFindByIndexPartial(template, propertyKey(start), propertyKey(end), null);
     }
     
     @SuppressWarnings("unchecked")
     @Override
-    public Collection<V> bulkFindByIndexPartial(V template, Set<? extends Object> includes, Set<String> excludes)
+    public Collection<V> mfind(V template, Set<? extends Object> includes, Set<String> excludes)
     {
         if(includes != null && excludes != null)
             throw new IllegalArgumentException("either includes or excludes should be specified, not both");
@@ -604,7 +604,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         for(int i = dirty.nextSetBit(0); i >= 0; i = dirty.nextSetBit(i + 1))
         {
             PropertyMetadata pm = properties.get(i);
-            if(pm.isIndexed())
+            if(pm.isHashIndexed())
             {
                 Object propVal = invokeGetter(pm, template);
                 if(propVal != null)

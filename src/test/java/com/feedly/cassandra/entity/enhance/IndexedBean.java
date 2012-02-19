@@ -13,13 +13,13 @@ public class IndexedBean implements Comparable<IndexedBean>
     @RowKey
     private Long rowKey;
     
-    @Column(col="s", indexed = true)
+    @Column(col="s", hashIndexed = true)
     private String strVal;
     
-    @Column(indexed=true)
+    @Column(hashIndexed=true)
     private int intVal;
 
-    @Column
+    @Column(rangeIndexed=true)
     private long longVal;
     
     public Long getRowKey()

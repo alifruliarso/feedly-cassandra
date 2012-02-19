@@ -1,6 +1,10 @@
 package com.feedly.cassandra;
 
 import static org.junit.Assert.*;
+
+import java.util.HashMap;
+import java.util.Map;
+
 import me.prettyprint.hector.api.ddl.ColumnDefinition;
 import me.prettyprint.hector.api.ddl.ColumnFamilyDefinition;
 import me.prettyprint.hector.api.ddl.ColumnIndexType;
@@ -67,7 +71,7 @@ public class PersistenceManagerSchemaTest extends CassandraServiceTestBase
     }
     
     @Test
-    public void testIndexes()
+    public void testHashIndexes()
     {
         PersistenceManager pm = new PersistenceManager();
         configurePersistenceManager(pm);
@@ -98,6 +102,63 @@ public class PersistenceManagerSchemaTest extends CassandraServiceTestBase
         assertTrue(foundCompositeIndexBean);
     }
 
+    @Test
+    public void testRangeIndexes()
+    {
+        PersistenceManager pm = new PersistenceManager();
+        configurePersistenceManager(pm);
+        
+        pm.setPackagePrefixes(new String[] {IndexedBean.class.getPackage().getName()});
+        pm.init();
+        
+        Map<String, ColumnFamilyDefinition> cfLookup = new HashMap<String, ColumnFamilyDefinition>();
+        String indexBeanName = IndexedBean.class.getAnnotation(ColumnFamily.class).name();
+        String compositeIndexBeanName = CompositeIndexedBean.class.getAnnotation(ColumnFamily.class).name();
+        
+        boolean foundIndexBeanIdx = false, foundCompositeIndexBeanIdx = false;
+        boolean foundIndexBeanPrevVal = false, foundCompositeIndexBeanPrevVal = false;
+        boolean foundIndexBeanWal = false, foundCompositeIndexBeanWal = false;
+        
+        for(ColumnFamilyDefinition cfdef : cluster.describeKeyspace(KEYSPACE).getCfDefs())
+        {
+            String name = cfdef.getName();
+            if(name.contains("_idx_"))
+            {
+                if(name.equals(indexBeanName + "_idx_longVal"))
+                    foundIndexBeanIdx = true;
+                else if(name.equals(compositeIndexBeanName + "_idx_longVal"))
+                    foundCompositeIndexBeanIdx = true;
+                else
+                    fail("unrecognized index table " + name);
+            }
+            else if(name.contains("_idxpval_"))
+            {
+                if(name.equals(indexBeanName + "_idxpval_longVal"))
+                    foundIndexBeanPrevVal = true;
+                else if(name.equals(compositeIndexBeanName + "_idxpval_longVal"))
+                    foundCompositeIndexBeanPrevVal = true;
+                else
+                    fail("unrecognized previous value index table " + name);
+            }
+            else if(name.endsWith("_idxwal"))
+            {
+                if(name.equals(indexBeanName + "_idxwal"))
+                    foundIndexBeanWal = true;
+                else if(name.equals(compositeIndexBeanName + "_idxwal"))
+                    foundCompositeIndexBeanWal = true;
+                else
+                    fail("unrecognized WAL index table " + name);
+            }
+        }
+        
+        assertTrue(foundCompositeIndexBeanIdx);
+        assertTrue(foundCompositeIndexBeanPrevVal);
+        assertTrue(foundCompositeIndexBeanWal);
+        assertTrue(foundIndexBeanIdx);
+        assertTrue(foundIndexBeanPrevVal);
+        assertTrue(foundIndexBeanWal);
+    }
+    
     @Test
     public void testUpdate()
     {
