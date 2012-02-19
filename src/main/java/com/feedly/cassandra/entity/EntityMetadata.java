@@ -35,6 +35,7 @@ public class EntityMetadata<V>
     private final PropertyMetadata _keyMeta;
     private final PropertyMetadata _unmappedHandler;
     private final boolean _useCompositeColumns;
+    private final String _familyName;
     
     static final Set<Class<?>> ALLOWED_TYPES;
 
@@ -53,9 +54,10 @@ public class EntityMetadata<V>
         return ALLOWED_TYPES;
     }
     
-    public EntityMetadata(Class<V> beanClass, boolean forceCompositeColumns)
+    public EntityMetadata(Class<V> beanClass, String familyName, boolean forceCompositeColumns)
     {
         _clazz = beanClass;
+        _familyName = familyName;
         Set<Annotation> beanAnnos = new HashSet<Annotation>();
         for(Annotation a : beanClass.getAnnotations())
             beanAnnos.add(a);
@@ -257,6 +259,11 @@ public class EntityMetadata<V>
     public boolean useCompositeColumns()
     {
         return _useCompositeColumns;
+    }
+    
+    public String getFamilyName()
+    {
+        return _familyName;
     }
     
     public Class<V> getType()

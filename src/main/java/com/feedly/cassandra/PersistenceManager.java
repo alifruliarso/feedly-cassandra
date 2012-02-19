@@ -152,7 +152,7 @@ public class PersistenceManager implements IKeyspaceFactory
     private void syncColumnFamily(Class<?> family, KeyspaceDefinition keyspaceDef)
     {
         ColumnFamily annotation = family.getAnnotation(ColumnFamily.class);
-        EntityMetadata<?> meta = new EntityMetadata(family, annotation.forceCompositeColumns());
+        EntityMetadata<?> meta = new EntityMetadata(family, annotation.name(), annotation.forceCompositeColumns());
         
         String familyName = annotation.name();
         ColumnFamilyDefinition existing = null;

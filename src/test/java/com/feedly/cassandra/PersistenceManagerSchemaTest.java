@@ -1,10 +1,6 @@
 package com.feedly.cassandra;
 
 import static org.junit.Assert.*;
-
-import java.util.HashMap;
-import java.util.Map;
-
 import me.prettyprint.hector.api.ddl.ColumnDefinition;
 import me.prettyprint.hector.api.ddl.ColumnFamilyDefinition;
 import me.prettyprint.hector.api.ddl.ColumnIndexType;
@@ -111,7 +107,6 @@ public class PersistenceManagerSchemaTest extends CassandraServiceTestBase
         pm.setPackagePrefixes(new String[] {IndexedBean.class.getPackage().getName()});
         pm.init();
         
-        Map<String, ColumnFamilyDefinition> cfLookup = new HashMap<String, ColumnFamilyDefinition>();
         String indexBeanName = IndexedBean.class.getAnnotation(ColumnFamily.class).name();
         String compositeIndexBeanName = CompositeIndexedBean.class.getAnnotation(ColumnFamily.class).name();
         

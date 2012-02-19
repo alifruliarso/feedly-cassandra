@@ -56,17 +56,28 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         _pm = new PersistenceManager();
         _dao = new SampleBeanDao();
         _dao.setKeyspaceFactory(_pm);
+        _dao.init();
+        
         _mapDao = new MapBeanDao();
         _mapDao.setKeyspaceFactory(_pm);
+        _mapDao.init();
+        
         _sortedMapDao = new SortedMapBeanDao();
         _sortedMapDao.setKeyspaceFactory(_pm);
+        _sortedMapDao.init();
+        
         _listDao = new ListBeanDao();
         _listDao.setKeyspaceFactory(_pm);
+        _listDao.init();
+        
         _indexedDao = new IndexedBeanDao();
         _indexedDao.setKeyspaceFactory(_pm);
+        _indexedDao.init();
+        
         _compositeIndexedDao = new CompositeIndexedBeanDao();
         _compositeIndexedDao.setKeyspaceFactory(_pm);
-
+        _compositeIndexedDao.init();
+        
         configurePersistenceManager(_pm);
         
         _pm.setPackagePrefixes(new String[] {SampleBean.class.getPackage().getName()});
