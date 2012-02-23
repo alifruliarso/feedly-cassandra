@@ -269,7 +269,7 @@ abstract class LoadHelper<K,V> extends BaseDaoHelper<K, V>
         return value;
     }
 
-    private Set<? extends Object> partialProperties(Set<? extends Object> includes, Set<String> excludes)
+    protected Set<? extends Object> partialProperties(Set<? extends Object> includes, Set<String> excludes)
     {
         if(includes != null && excludes != null)
             throw new IllegalArgumentException("either includes or excludes should be specified, not both");

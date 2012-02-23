@@ -34,10 +34,14 @@ public interface ICassandraDao<K, V>
      * convenience methods that must find at most 1 value
      */
     public V find(V template); 
-    public V find(V template, Object start, Object end); //end is inclusive
+    public V find(V template, Object startColumn, Object endColumn); //end is inclusive
     public V find(V template, Set<? extends Object> includes, Set<String> excludes);
     
     public Collection<V> mfind(V template);
-    public Collection<V> mfind(V template, Object start, Object end); //end is inclusive
+    public Collection<V> mfind(V template, Object startColumn, Object endColumn); //end is inclusive
     public Collection<V> mfind(V template, Set<? extends Object> includes, Set<String> excludes);
+    
+    public Collection<V> mfindBetween(V startTemplate, V endTemplate);
+    public Collection<V> mfindBetween(V startTemplate, V endTemplate, Object startColumn, Object endColumn); //end is inclusive
+    public Collection<V> mfindBetween(V startTemplate, V endTemplate, Set<? extends Object> includes, Set<String> excludes);
 }

@@ -3,6 +3,8 @@ package com.feedly.cassandra.dao;
 import static org.junit.Assert.*;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
@@ -21,7 +23,9 @@ import me.prettyprint.cassandra.serializers.LongSerializer;
 import me.prettyprint.hector.api.beans.ColumnSlice;
 import me.prettyprint.hector.api.beans.DynamicComposite;
 import me.prettyprint.hector.api.beans.HColumn;
+import me.prettyprint.hector.api.beans.Row;
 import me.prettyprint.hector.api.factory.HFactory;
+import me.prettyprint.hector.api.query.RangeSlicesQuery;
 import me.prettyprint.hector.api.query.SliceQuery;
 
 import org.junit.Before;
@@ -29,12 +33,16 @@ import org.junit.Test;
 
 import com.feedly.cassandra.PersistenceManager;
 import com.feedly.cassandra.entity.ByteIndicatorSerializer;
+import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.EntityUtils;
+import com.feedly.cassandra.entity.IndexMetadata;
+import com.feedly.cassandra.entity.TestPartitioner;
 import com.feedly.cassandra.entity.enhance.CompositeIndexedBean;
 import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 import com.feedly.cassandra.entity.enhance.IndexedBean;
 import com.feedly.cassandra.entity.enhance.ListBean;
 import com.feedly.cassandra.entity.enhance.MapBean;
+import com.feedly.cassandra.entity.enhance.PartitionedIndexBean;
 import com.feedly.cassandra.entity.enhance.SampleBean;
 import com.feedly.cassandra.entity.enhance.SortedMapBean;
 import com.feedly.cassandra.test.CassandraServiceTestBase;
@@ -49,6 +57,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
     ListBeanDao _listDao;
     IndexedBeanDao _indexedDao;
     CompositeIndexedBeanDao _compositeIndexedDao;
+    RecordingStrategy _indexedStrategy, _compositeStrategy;
     
     @Before
     public void before()
@@ -72,10 +81,14 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         
         _indexedDao = new IndexedBeanDao();
         _indexedDao.setKeyspaceFactory(_pm);
+        _indexedStrategy = new RecordingStrategy();
+        _indexedDao.setStaleValueIndexStrategy(_indexedStrategy);
         _indexedDao.init();
         
         _compositeIndexedDao = new CompositeIndexedBeanDao();
         _compositeIndexedDao.setKeyspaceFactory(_pm);
+        _compositeStrategy = new RecordingStrategy();
+        _compositeIndexedDao.setStaleValueIndexStrategy(_compositeStrategy);
         _compositeIndexedDao.init();
         
         configurePersistenceManager(_pm);
@@ -197,7 +210,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
 
     
     @Test
-    public void testCollectionPut()
+    public void testCollectionPut() throws Exception
     {
         /*
          * Map
@@ -225,7 +238,6 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         
         
         assertEquals(5, slice.getColumns().size());
-        System.out.println(slice.getColumns());
         assertColumn(mapBean.getStrProp(), false, slice.getColumnByName(new DynamicComposite("strProp")));
         assertColumn(mapBean.getStrProp1(), false, slice.getColumnByName(new DynamicComposite("strProp1")));
         assertColumn(mapBean.getMapProp().get("strMapProp"), true, slice.getColumnByName(new DynamicComposite("mapProp", "strMapProp")));
@@ -643,7 +655,6 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         }
 
         _dao.mput(beans);
-//        List<SampleBean> bulkActuals = _dao.loadPartial(keys, null, null, Collections.singleton("boolVal"));
 
 
         for(SampleBean saved : beans)
@@ -1012,6 +1023,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         {
             IndexedBean idxBean = new IndexedBean();
             idxBean.setRowKey(new Long(i));
+            idxBean.setCharVal('a');
             idxBean.setIntVal(i/10);
             idxBean.setLongVal(i/10);
             idxBean.setStrVal("strval");
@@ -1020,6 +1032,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
 
             CompositeIndexedBean cIdxBean = new CompositeIndexedBean();
             cIdxBean.setRowKey(new Long(i));
+            cIdxBean.setCharVal('a');
             cIdxBean.setIntVal(i/10);
             cIdxBean.setLongVal(i/10);
             cIdxBean.setStrVal("strval");
@@ -1079,6 +1092,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         {
             IndexedBean idxBean = new IndexedBean();
             idxBean.setRowKey(new Long(i));
+            idxBean.setCharVal('c');
             idxBean.setIntVal(i/10);
             idxBean.setLongVal(i);
             idxBean.setStrVal("strval");
@@ -1087,6 +1101,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
 
             CompositeIndexedBean cIdxBean = new CompositeIndexedBean();
             cIdxBean.setRowKey(new Long(i));
+            cIdxBean.setCharVal('c');
             cIdxBean.setIntVal(i/10);
             cIdxBean.setLongVal(i);
             cIdxBean.setStrVal("strval");
@@ -1188,6 +1203,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         {
             IndexedBean idxBean = new IndexedBean();
             idxBean.setRowKey(new Long(i));
+            idxBean.setCharVal('c');
             idxBean.setIntVal(i/10);
             idxBean.setLongVal(i);
             idxBean.setStrVal("strval");
@@ -1196,6 +1212,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             
             CompositeIndexedBean cIdxBean = new CompositeIndexedBean();
             cIdxBean.setRowKey(new Long(i));
+            cIdxBean.setCharVal('c');
             cIdxBean.setIntVal(i/10);
             cIdxBean.setLongVal(i);
             cIdxBean.setStrVal("strval");
@@ -1234,6 +1251,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         {
             CompositeIndexedBean idxBean = new CompositeIndexedBean();
             idxBean.setRowKey(idxBeans.get(i).getRowKey());
+            idxBean.setCharVal(idxBeans.get(i).getCharVal());
             idxBean.setLongVal(idxBeans.get(i).getLongVal());
             idxBean.setStrVal(idxBeans.get(i).getStrVal());
             
@@ -1288,6 +1306,371 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             expected.setListProp(expectedColl);
             assertEquals(expected, listActuals.get(i-50));
         }
+    }
+
+
+    @Test
+    public void testRangeIndexFind() throws Exception
+    {
+        int numBeans = CassandraDaoBase.ROW_RANGE_SIZE;
+        List<IndexedBean> idxBeans = new ArrayList<IndexedBean>();
+        List<CompositeIndexedBean> cIdxBeans = new ArrayList<CompositeIndexedBean>();
+        for(int i = 0; i < numBeans; i++)
+        {
+            IndexedBean idxBean = new IndexedBean();
+            idxBean.setRowKey(new Long(i));
+            idxBean.setCharVal('c');
+            idxBean.setIntVal(i);
+            idxBean.setLongVal(i/10);
+            idxBean.setStrVal("strval");
+            
+            idxBeans.add(idxBean);
+
+            CompositeIndexedBean cIdxBean = new CompositeIndexedBean();
+            cIdxBean.setCharVal('c');
+            cIdxBean.setRowKey(new Long(i));
+            cIdxBean.setIntVal(i);
+            cIdxBean.setLongVal(i/10);
+            cIdxBean.setStrVal("strval");
+            
+            cIdxBeans.add(cIdxBean);
+        }
+        
+        _indexedDao.mput(idxBeans);
+        _compositeIndexedDao.mput(cIdxBeans);
+        
+        IndexedBean idxTmpl = new IndexedBean();
+        idxTmpl.setLongVal(5);
+        List<IndexedBean> idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl));
+
+        Collections.sort(idxActuals);
+        assertEquals(idxBeans.subList(50, 60), idxActuals);
+        for(IndexedBean idxBean : idxActuals)
+            assertTrue(((IEnhancedEntity) idxBean).getModifiedFields().isEmpty());
+
+        CompositeIndexedBean cIdxTmpl = new CompositeIndexedBean();
+        cIdxTmpl.setLongVal(5);
+        List<CompositeIndexedBean> cIdxActuals = new ArrayList<CompositeIndexedBean>(_compositeIndexedDao.mfind(cIdxTmpl));
+
+        Collections.sort(cIdxActuals);
+        assertEquals(cIdxBeans.subList(50, 60), cIdxActuals);
+        for(CompositeIndexedBean cIdxBean : cIdxActuals)
+            assertTrue(((IEnhancedEntity) cIdxBean).getModifiedFields().isEmpty());
+
+        
+        assertEquals(0, _indexedStrategy.records.size());
+        assertEquals(0, _compositeStrategy.records.size());
+        
+        for(IndexedBean bean : idxBeans.subList(50, 55))
+            bean.setLongVal(-1);
+        
+        _indexedDao.mput(idxBeans.subList(50, 55));
+        idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl));
+        Collections.sort(idxActuals);
+        assertEquals(idxBeans.subList(55, 60), idxActuals);
+        assertEquals(1, _indexedStrategy.records.size());
+        
+        StaleIndexUpdateRecord record = _indexedStrategy.records.get(0);
+        DynamicCompositeSerializer compositeSer = new DynamicCompositeSerializer();
+
+        Set<Long> actualStaleRowKeys = new HashSet<Long>();
+        Set<Long> expectedStaleRowKeys = new HashSet<Long>();
+        /*
+         * validate the clock values
+         */
+        for(StaleIndexValue stale : record.values)
+        {
+            actualStaleRowKeys.add((Long) stale.getColumnName().get(1));
+            
+            SliceQuery<DynamicComposite,DynamicComposite,byte[]> query = 
+                    HFactory.createSliceQuery(keyspace, compositeSer, compositeSer, BytesArraySerializer.get());
+
+            query.setKey(stale.getRowKey());
+            query.setColumnNames(stale.getColumnName());
+            query.setColumnFamily("indexedbean_idx");
+            List<HColumn<DynamicComposite,byte[]>> columns = query.execute().get().getColumns();
+            assertEquals(1, columns.size());
+            assertEquals(stale.getClock(), columns.get(0).getClock());
+        }
+        assertEquals(5, record.values.size());
+        for(IndexedBean i : idxBeans.subList(50, 55))
+            expectedStaleRowKeys.add(i.getRowKey());
+        
+        assertEquals(expectedStaleRowKeys, actualStaleRowKeys);
+        
+        /*
+         * do a between find
+         */
+        IndexedBean endIdxTmpl = new IndexedBean();
+        endIdxTmpl.setLongVal(6);
+
+        idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfindBetween(idxTmpl, endIdxTmpl));
+        Collections.sort(idxActuals);
+        assertEquals(idxBeans.subList(55, 70), idxActuals);
+     
+        assertEquals(2, _indexedStrategy.records.size());
+        
+        record = _indexedStrategy.records.get(1);
+        assertEquals(5, record.values.size());
+
+        actualStaleRowKeys.clear();
+        for(StaleIndexValue stale : record.values)
+            actualStaleRowKeys.add((Long) stale.getColumnName().get(1));
+        
+        assertEquals(expectedStaleRowKeys, actualStaleRowKeys);
+        
+        CompositeIndexedBean endCIdxTmpl = new CompositeIndexedBean();
+        endCIdxTmpl.setLongVal(6);
+        
+        cIdxActuals = new ArrayList<CompositeIndexedBean>(_compositeIndexedDao.mfindBetween(cIdxTmpl, endCIdxTmpl));
+        Collections.sort(cIdxActuals);
+        assertEquals(cIdxBeans.subList(50, 70), cIdxActuals);
+    }
+
+    @Test
+    public void testRangeFindPartial() throws Exception
+    {
+        int numBeans = 1 + CassandraDaoBase.COL_RANGE_SIZE * 3;//force dao to do multiple ranges
+        List<IndexedBean> idxBeans = new ArrayList<IndexedBean>();
+        for(int i = 0; i < numBeans; i++)
+        {
+            IndexedBean idxBean = new IndexedBean();
+            idxBean.setRowKey(new Long(i));
+            idxBean.setCharVal('c');
+            idxBean.setIntVal(i);
+            idxBean.setLongVal(Math.min(i/CassandraDaoBase.COL_RANGE_SIZE, 2));
+            idxBean.setStrVal("strval");
+
+            idxBeans.add(idxBean);
+
+        }
+
+        _indexedDao.mput(idxBeans);
+
+        IndexedBean idxTmpl = new IndexedBean();
+        idxTmpl.setLongVal(2);
+        List<IndexedBean> idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl, Collections.singleton("intVal"), null));
+        List<IndexedBean> idxExpecteds = new ArrayList<IndexedBean>();
+
+        Collections.sort(idxActuals);
+        for(int i = 100; i < 301; i++)
+        {
+            IndexedBean idxBean = new IndexedBean();
+            idxBean.setRowKey(idxBeans.get(i).getRowKey());
+            idxBean.setIntVal(idxBeans.get(i).getIntVal());
+            idxBean.setLongVal(idxBeans.get(i).getLongVal());
+
+            idxExpecteds.add(idxBean);
+        }
+
+        assertEquals(idxExpecteds.subList(100, 201), idxActuals);
+        for(IndexedBean idxBean : idxActuals)
+            assertTrue(((IEnhancedEntity) idxBean).getModifiedFields().isEmpty());
+        
+        IndexedBean startIdxTmpl = new IndexedBean();
+        startIdxTmpl.setLongVal(1);
+        idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfindBetween(startIdxTmpl, idxTmpl, Collections.singleton("intVal"), null));
+        Collections.sort(idxActuals);
+
+        assertEquals(idxExpecteds, idxActuals);
+        for(IndexedBean idxBean : idxActuals)
+            assertTrue(((IEnhancedEntity) idxBean).getModifiedFields().isEmpty());
+
+    }
+
+    @Test
+    public void testRangeFindPartialRange() throws Exception
+    {
+        int numBeans = CassandraDaoBase.ROW_RANGE_SIZE;
+        List<IndexedBean> idxBeans = new ArrayList<IndexedBean>();
+        for(int i = 0; i < numBeans; i++)
+        {
+            IndexedBean idxBean = new IndexedBean();
+            idxBean.setRowKey(new Long(i));
+            idxBean.setCharVal('c');
+            idxBean.setIntVal(i);
+            idxBean.setLongVal(i/10);
+            idxBean.setStrVal("strval");
+
+            idxBeans.add(idxBean);
+        }
+
+        _indexedDao.mput(idxBeans);
+
+        IndexedBean idxTmpl = new IndexedBean();
+        idxTmpl.setLongVal(5);
+        List<IndexedBean> idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl, "intVal", "t"));
+        List<IndexedBean> idxExpecteds = new ArrayList<IndexedBean>();
+
+        Collections.sort(idxActuals);
+        for(int i = 50; i < 70; i++)
+        {
+            IndexedBean idxBean = new IndexedBean();
+            idxBean.setRowKey(idxBeans.get(i).getRowKey());
+            idxBean.setIntVal(idxBeans.get(i).getIntVal());
+            idxBean.setLongVal(idxBeans.get(i).getLongVal());
+            idxBean.setStrVal(idxBeans.get(i).getStrVal());
+
+            idxExpecteds.add(idxBean);
+        }
+
+        assertEquals(idxExpecteds.subList(0, 10), idxActuals);
+        for(IndexedBean idxBean : idxActuals)
+            assertTrue(((IEnhancedEntity) idxBean).getModifiedFields().isEmpty());
+        
+        IndexedBean endIdxTmpl = new IndexedBean();
+        endIdxTmpl.setLongVal(6);
+        idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfindBetween(idxTmpl, endIdxTmpl, "intVal", "t"));
+        Collections.sort(idxActuals);
+        assertEquals(idxExpecteds, idxActuals);
+        for(IndexedBean idxBean : idxActuals)
+            assertTrue(((IEnhancedEntity) idxBean).getModifiedFields().isEmpty());
+    }
+
+    @Test
+    public void testRangeCompositeIndex() throws Exception
+    {
+        int numBeans = 30;
+        List<IndexedBean> idxBeans = new ArrayList<IndexedBean>();
+        for(int i = 0; i < numBeans; i++)
+        {
+            IndexedBean idxBean = new IndexedBean();
+            idxBean.setRowKey(new Long(i));
+            idxBean.setCharVal('c');
+            idxBean.setIntVal(i);
+            idxBean.setLongVal((i%5)/2);
+            idxBean.setStrVal("strval-" + i/5);
+            
+            idxBeans.add(idxBean);
+        }
+        
+        _indexedDao.mput(idxBeans);
+        
+        IndexedBean idxTmpl = new IndexedBean();
+        idxTmpl.setStrVal("strval-1");
+        idxTmpl.setLongVal(1);
+        List<IndexedBean> idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl));
+
+        Collections.sort(idxActuals);
+        assertEquals(idxBeans.subList(7, 9), idxActuals);
+        for(IndexedBean idxBean : idxActuals)
+            assertTrue(((IEnhancedEntity) idxBean).getModifiedFields().isEmpty());
+        
+        IndexedBean startTmpl = new IndexedBean(), endTmpl = new IndexedBean();
+        startTmpl.setStrVal("strval-1");
+        endTmpl.setStrVal("strval-2");
+        endTmpl.setLongVal(1L);
+        idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfindBetween(startTmpl, endTmpl));
+
+        Collections.sort(idxActuals);
+        assertEquals(idxBeans.subList(5, 14), idxActuals);
+        for(IndexedBean idxBean : idxActuals)
+            assertTrue(((IEnhancedEntity) idxBean).getModifiedFields().isEmpty());
+        
+        startTmpl.setStrVal("strval-1");
+        startTmpl.setLongVal(2L);
+        idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfindBetween(startTmpl, endTmpl));
+
+        Collections.sort(idxActuals);
+        assertEquals(idxBeans.subList(9, 14), idxActuals);
+        for(IndexedBean idxBean : idxActuals)
+            assertTrue(((IEnhancedEntity) idxBean).getModifiedFields().isEmpty());
+    }
+    
+    @Test
+    public void testIndexPartitioning() throws Exception
+    {
+        PartitionIndexBeanDao dao = new PartitionIndexBeanDao();
+        dao.setKeyspaceFactory(_pm);
+        dao.init();
+        
+        int numBeans = 100;
+        List<PartitionedIndexBean> idxBeans = new ArrayList<PartitionedIndexBean>();
+        for(long i = 0; i < numBeans; i++)
+        {
+            PartitionedIndexBean idxBean = new PartitionedIndexBean();
+            idxBean.setRowKey(i);
+            idxBean.setPartitionedValue(i/10);
+            
+            idxBeans.add(idxBean);
+        }
+        dao.mput(idxBeans);
+        assertEquals(numBeans, TestPartitioner.partitionHistory().size());
+        /*
+         * check index table row count
+         */
+        BytesArraySerializer bas = BytesArraySerializer.get();
+        RangeSlicesQuery<byte[],byte[],byte[]> query = HFactory.createRangeSlicesQuery(keyspace, bas, bas, bas);
+        query.setKeys(null, null);
+        query.setColumnFamily("pib_idx");
+        query.setRange(null, null, false, 100);
+        
+        Iterator<Row<byte[], byte[], byte[]>> iterator = query.execute().get().iterator();
+        int cnt = 0;
+        while(iterator.hasNext())
+        {
+            cnt++;
+            Row<byte[], byte[], byte[]> row = iterator.next();
+            assertEquals(10, row.getColumnSlice().getColumns().size());
+        }
+        
+        assertEquals(numBeans/10, cnt);
+        
+        TestPartitioner.partitionHistory().clear();
+        assertTrue(TestPartitioner.rangePartitionHistory().isEmpty());
+        
+        /*
+         * range find
+         */
+        PartitionedIndexBean tmpl = new PartitionedIndexBean();
+        tmpl.setPartitionedValue(5L);
+        List<PartitionedIndexBean> actual = new ArrayList<PartitionedIndexBean>(dao.mfind(tmpl));
+        Collections.sort(actual);
+        
+        assertEquals(idxBeans.subList(50, 60), actual);
+        assertEquals(1, TestPartitioner.partitionHistory().size());
+        assertEquals(5, TestPartitioner.partitionHistory().get(0).get(0));
+        assertTrue(TestPartitioner.rangePartitionHistory().isEmpty());
+        
+        TestPartitioner.partitionHistory().clear();
+        
+        /*
+         * range between find
+         */
+        PartitionedIndexBean endTmpl = new PartitionedIndexBean();
+        endTmpl.setPartitionedValue(7L);
+        actual = new ArrayList<PartitionedIndexBean>(dao.mfindBetween(tmpl, endTmpl));
+        Collections.sort(actual);
+        
+        assertEquals(idxBeans.subList(50, 80), actual);
+        assertTrue(TestPartitioner.partitionHistory().isEmpty());
+        assertEquals(1, TestPartitioner.rangePartitionHistory().size());
+        assertEquals(Arrays.asList(new Long[] {5L,6L,7L}), TestPartitioner.rangePartitionHistory().get(0));
+        
+        TestPartitioner.partitionHistory().clear();
+    }
+    
+    private class RecordingStrategy implements IStaleIndexValueStrategy 
+    {
+        List<StaleIndexUpdateRecord> records = new ArrayList<StaleIndexUpdateRecord>();
+        
+        @Override
+        public void handle(EntityMetadata<?> entity, IndexMetadata index, Collection<StaleIndexValue> values)
+        {
+            StaleIndexUpdateRecord record = new StaleIndexUpdateRecord();
+            record.entityMetadata = entity;
+            record.values = values;
+            record.index = index;
+            
+            records.add(record);
+        }
+    }
+
+    private class StaleIndexUpdateRecord 
+    {
+        EntityMetadata<?> entityMetadata;
+        Collection<StaleIndexValue> values;
+        IndexMetadata index;
     }
 
 }

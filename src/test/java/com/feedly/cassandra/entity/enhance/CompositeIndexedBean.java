@@ -13,6 +13,9 @@ public class CompositeIndexedBean implements Comparable<CompositeIndexedBean>
     @RowKey
     private Long rowKey;
     
+    @Column(col="c")
+    private Character charVal;
+
     @Column(col="s", hashIndexed = true)
     private String strVal;
     
@@ -94,6 +97,16 @@ public class CompositeIndexedBean implements Comparable<CompositeIndexedBean>
     public int compareTo(CompositeIndexedBean o)
     {
         return rowKey.compareTo(o.rowKey);
+    }
+
+    public Character getCharVal()
+    {
+        return charVal;
+    }
+
+    public void setCharVal(Character charVal)
+    {
+        this.charVal = charVal;
     }
 
 }

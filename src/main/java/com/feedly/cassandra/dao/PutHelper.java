@@ -1,11 +1,17 @@
 package com.feedly.cassandra.dao;
 
+import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
+import me.prettyprint.cassandra.serializers.LongSerializer;
+import me.prettyprint.cassandra.serializers.StringSerializer;
+import me.prettyprint.hector.api.Keyspace;
 import me.prettyprint.hector.api.Serializer;
 import me.prettyprint.hector.api.beans.DynamicComposite;
 import me.prettyprint.hector.api.beans.HColumn;
@@ -13,12 +19,18 @@ import me.prettyprint.hector.api.factory.HFactory;
 import me.prettyprint.hector.api.mutation.Mutator;
 
 import com.feedly.cassandra.IKeyspaceFactory;
+import com.feedly.cassandra.entity.EIndexType;
 import com.feedly.cassandra.entity.EntityMetadata;
+import com.feedly.cassandra.entity.IndexMetadata;
 import com.feedly.cassandra.entity.PropertyMetadata;
 import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 
 public class PutHelper<K, V> extends BaseDaoHelper<K, V>
 {
+    private static final LongSerializer SER_LONG = LongSerializer.get();
+
+    private static final byte[] WAL_COL_NAME = StringSerializer.get().toBytes("rowkey"); 
+    private static final byte[] IDX_COL_VAL = new byte[] {0}; 
 
     PutHelper(EntityMetadata<V> meta, IKeyspaceFactory factory)
     {
@@ -33,25 +45,65 @@ public class PutHelper<K, V> extends BaseDaoHelper<K, V>
     public void mput(Collection<V> values)
     {
         PropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
-        Mutator<byte[]> mutator = HFactory.createMutator(_keyspaceFactory.createKeyspace(), SER_BYTES);
-
+        Keyspace keyspace = _keyspaceFactory.createKeyspace();
+        Mutator<byte[]> mutator = HFactory.createMutator(keyspace, SER_BYTES);
+        Mutator<byte[]> walMutator = null;
+        Mutator<byte[]> walCleanupMutator = null;
+        boolean indexesUpdated = false;
+        long clock = keyspace.createClock();
+        byte[] nowBytes = SER_LONG.toBytes(clock);
+        
+        //prepare the operations...
         for(V value : values)
         {
             Object key = invokeGetter(keyMeta, value);
             byte[] keyBytes = serialize(key, false, keyMeta.getSerializer());
 
+            
             _logger.debug("inserting {}[{}]", _entityMeta.getType().getSimpleName(), key);
 
-            int colCnt = saveDirtyFields(key, keyBytes, value, mutator);
-            colCnt += saveUnmappedFields(key, keyBytes, value, mutator);
+            int[] colCnts = saveDirtyFields(key, keyBytes, value, clock, mutator);
+            colCnts[0] += saveUnmappedFields(key, keyBytes, value, clock, mutator);
 
-            if(colCnt == 0)
-                _logger.warn("no updates for ", key);
+            if(colCnts[0] == 0)
+                _logger.info("no updates for ", key);
             
-            _logger.debug("updated {} values for {}[{}]", new Object[] { colCnt, _entityMeta.getType().getSimpleName(), key });
+            _logger.debug("updated {} values for {}[{}]", new Object[] { colCnts[0], _entityMeta.getType().getSimpleName(), key });
+            
+            if(colCnts[1] > 0)
+            {
+                _logger.debug("updated {} indexes for {}[{}]", new Object[] { colCnts[1], _entityMeta.getType().getSimpleName(), key });
+                if(walMutator == null)
+                {
+                    walMutator = HFactory.createMutator(keyspace, SER_BYTES);
+                    walCleanupMutator = HFactory.createMutator(keyspace, SER_BYTES);
+                }
+                indexesUpdated = true;
+                HColumn<byte[], byte[]> column = HFactory.createColumn(WAL_COL_NAME, nowBytes, clock, SER_BYTES, SER_BYTES);
+                walMutator.addInsertion(keyBytes, _entityMeta.getWalFamilyName(), column);
+                walCleanupMutator.addDeletion(keyBytes, _entityMeta.getWalFamilyName(), WAL_COL_NAME, SER_BYTES, clock);
+            }
         }
         
+
+        /*
+         * insert into WAL indicating index update about to happen, if something happens, the WAL row will indicate which rows 
+         * need to be made consistent with its indexes
+         */
+        if(indexesUpdated)
+            walMutator.execute();
+            
+        /*
+         * execute the index and table updates
+         */
         mutator.execute();
+        
+        /*
+         * finally delete the WAL entries, no longer needed as mutation was successful
+         */
+        if(indexesUpdated)
+            walCleanupMutator.execute();
+        
         
         //do after execution
         for(V value : values)
@@ -63,15 +115,20 @@ public class PutHelper<K, V> extends BaseDaoHelper<K, V>
         
     }
 
+    //rv[0] = total col cnt, rv[1] = range index update count
     @SuppressWarnings({ "rawtypes", "unchecked" })
-    private int saveDirtyFields(Object key, byte[] keyBytes, V value, Mutator<byte[]> mutator)
+    private int[] saveDirtyFields(Object key,
+                                  byte[] keyBytes, 
+                                  V value, 
+                                  long clock,
+                                  Mutator<byte[]> mutator)
     {
         List<PropertyMetadata> properties = _entityMeta.getProperties();
 
         IEnhancedEntity entity = asEntity(value);
         BitSet dirty = entity.getModifiedFields();
-        int colCnt = 0;
-
+        int[] rv = new int[2];
+        Set<IndexMetadata> affectedIndexes = new HashSet<IndexMetadata>();
         if(!dirty.isEmpty())
         {
             for(int i = dirty.nextSetBit(0); i >= 0; i = dirty.nextSetBit(i + 1))
@@ -81,9 +138,9 @@ public class PutHelper<K, V> extends BaseDaoHelper<K, V>
                 if(colMeta.isCollection())
                 {
                     if(colMeta.getFieldType().equals(List.class))
-                        colCnt += saveListFields(key, keyBytes, colMeta, value, mutator);
+                        rv[0] += saveListFields(key, keyBytes, colMeta, value, clock, mutator);
                     else
-                        colCnt += saveMapFields(key, keyBytes, colMeta, value, mutator);
+                        rv[0] += saveMapFields(key, keyBytes, colMeta, value, clock, mutator);
                 }
                 else
                 {
@@ -93,24 +150,61 @@ public class PutHelper<K, V> extends BaseDaoHelper<K, V>
                     
                     if(propVal != null)
                     {
-                        HColumn column = HFactory.createColumn(colMeta.getPhysicalNameBytes(), propVal, SER_BYTES, (Serializer) colMeta.getSerializer());
+                        HColumn column = HFactory.createColumn(colMeta.getPhysicalNameBytes(), propVal, clock, SER_BYTES, (Serializer) colMeta.getSerializer());
                         mutator.addInsertion(keyBytes, _entityMeta.getFamilyName(), column);
+
                     }
                     else
                     {
-                        mutator.addDeletion(keyBytes, _entityMeta.getFamilyName(), colMeta.getPhysicalNameBytes(), SER_BYTES);
+                        mutator.addDeletion(keyBytes, _entityMeta.getFamilyName(), colMeta.getPhysicalNameBytes(), SER_BYTES, clock);
                     }
-                    
-                    colCnt++;
+
+                    for(IndexMetadata idxMeta : _entityMeta.getIndexes(colMeta))
+                    {
+                        if(idxMeta.getType() == EIndexType.RANGE && affectedIndexes.add(idxMeta))
+                        {
+                            addIndexWrite(key, value, idxMeta, clock, mutator);
+                            rv[1]++;
+                        }
+                    }
+
+                    rv[0]++;
                 }
             }
 
         }
 
-        return colCnt;
+        return rv;
     }
 
-    private int saveMapFields(Object key, byte[] keyBytes, PropertyMetadata colMeta, V value, Mutator<byte[]> mutator)
+    /*
+     * index column family structure
+     * row key:   idx_id:partition key 
+     * column:    index value:rowkey
+     * value:     meaningless
+     */
+    private void addIndexWrite(Object key, V value, IndexMetadata idxMeta, long clock, Mutator<byte[]> mutator)
+    {
+        List<Object> propVals = new ArrayList<Object>(idxMeta.getIndexedProperties().size());
+        DynamicComposite colName = new DynamicComposite();
+        for(PropertyMetadata pm : idxMeta.getIndexedProperties())
+        {
+            Object pval = invokeGetter(pm, value);
+            propVals.add(pval);
+            colName.add(pval);
+        }
+        colName.add(key);
+        
+        HColumn<DynamicComposite, byte[]> column = HFactory.createColumn(colName, IDX_COL_VAL, clock, SER_COMPOSITE, SER_BYTES);
+        
+        for(Object partitionVal : idxMeta.getIndexPartitioner().partitionValue(propVals))
+        {
+            DynamicComposite rowKey = new DynamicComposite(idxMeta.id(), partitionVal);
+            mutator.addInsertion(SER_COMPOSITE.toBytes(rowKey), _entityMeta.getIndexFamilyName(), column);
+        }
+    }
+
+    private int saveMapFields(Object key, byte[] keyBytes, PropertyMetadata colMeta, V value, long clock, Mutator<byte[]> mutator)
     {
         Map<?, ?> map = (Map<?,?>) invokeGetter(colMeta, value);
         
@@ -127,13 +221,13 @@ public class PutHelper<K, V> extends BaseDaoHelper<K, V>
 
         for(Map.Entry<?, ?> entry : map.entrySet())
         {
-            saveCollectionColumn(key, keyBytes, entry.getKey(), entry.getValue(), colMeta, mutator);
+            saveCollectionColumn(key, keyBytes, entry.getKey(), entry.getValue(), colMeta, clock, mutator);
         }
         
         return map.size();  
     }
 
-    private int saveListFields(Object key, byte[] keyBytes, PropertyMetadata colMeta, V value, Mutator<byte[]> mutator)
+    private int saveListFields(Object key, byte[] keyBytes, PropertyMetadata colMeta, V value, long clock, Mutator<byte[]> mutator)
     {
         List<?> list = (List<?>) invokeGetter(colMeta, value);
         
@@ -150,28 +244,36 @@ public class PutHelper<K, V> extends BaseDaoHelper<K, V>
         
         
         int nullIdx = list.indexOf(null); 
+        int startIdx = -1;
         if(nullIdx >= 0)
         {
             Mutator<byte[]> delMutator = HFactory.createMutator(_keyspaceFactory.createKeyspace(), SER_BYTES);
             for(int i = nullIdx; i < size; i++)
             {
-                saveCollectionColumn(key, keyBytes, i, null, colMeta, delMutator);
+                saveCollectionColumn(key, keyBytes, i, null, colMeta, clock-1, delMutator);
+                if(startIdx < 0 && list.get(i) != null)
+                    startIdx = i;
+                    
             }
             
             
-            _logger.debug("{}[{}].{} list shortened, deleting %d entries (starting from first deleted entry)",
+            _logger.debug("{}[{}].{} list shortened need to re-index list. deleting {} entries (starting from first deleted entry)",
                           new Object[]{_entityMeta.getFamilyName(), key, colMeta.getName(), size - nullIdx});
             
             
             delMutator.execute();
         }
-
+        else
+            startIdx = 0;
         
-        for(int i = 0; i < size; i++) 
+        if(startIdx >= 0)
         {
-            boolean added = saveCollectionColumn(key, keyBytes, newIdx, list.get(i), colMeta, mutator);
-            if(added)
-                newIdx++;
+            for(int i = startIdx; i < size; i++) 
+            {
+                boolean added = saveCollectionColumn(key, keyBytes, newIdx, list.get(i), colMeta, clock, mutator);
+                if(added)
+                    newIdx++;
+            }
         }
 
         return size;  
@@ -182,6 +284,7 @@ public class PutHelper<K, V> extends BaseDaoHelper<K, V>
                                          Object propKey,
                                          Object propVal,
                                          PropertyMetadata colMeta,
+                                         long clock,
                                          Mutator<byte[]> mutator)
     {
         _logger.trace("{}[{}].{}:{} = {}", new Object[] {_entityMeta.getType().getSimpleName(), key, colMeta.getName(), propKey, propVal});
@@ -198,7 +301,7 @@ public class PutHelper<K, V> extends BaseDaoHelper<K, V>
         DynamicComposite colName = new DynamicComposite(colMeta.getName(), propKey);
         if(propVal == null)
         {
-            mutator.addDeletion(keyBytes, _entityMeta.getFamilyName(), colName, SER_COMPOSITE);
+            mutator.addDeletion(keyBytes, _entityMeta.getFamilyName(), colName, SER_COMPOSITE, clock);
         }
         else
         {
@@ -213,7 +316,7 @@ public class PutHelper<K, V> extends BaseDaoHelper<K, V>
                                                                  propVal));
             }
 
-            HColumn<DynamicComposite, byte[]> column = HFactory.createColumn(colName, propValBytes, SER_COMPOSITE, SER_BYTES);
+            HColumn<DynamicComposite, byte[]> column = HFactory.createColumn(colName, propValBytes, clock, SER_COMPOSITE, SER_BYTES);
             mutator.addInsertion(keyBytes, _entityMeta.getFamilyName(), column);
         }
         
@@ -221,7 +324,7 @@ public class PutHelper<K, V> extends BaseDaoHelper<K, V>
     }
 
     @SuppressWarnings({ "rawtypes", "unchecked" })
-    private int saveUnmappedFields(Object key, byte[] keyBytes, V value, Mutator<byte[]> mutator)
+    private int saveUnmappedFields(Object key, byte[] keyBytes, V value, long clock, Mutator<byte[]> mutator)
     {
         if(!asEntity(value).getUnmappedFieldsModified())
             return 0;
@@ -264,7 +367,7 @@ public class PutHelper<K, V> extends BaseDaoHelper<K, V>
                                                                      colVal));
                 }
                 
-                HColumn column = HFactory.createColumn(colName, colValBytes, SER_BYTES, SER_BYTES);
+                HColumn column = HFactory.createColumn(colName, colValBytes, clock, SER_BYTES, SER_BYTES);
                 mutator.addInsertion(keyBytes, _entityMeta.getFamilyName(), column);
             }
             else
@@ -277,7 +380,7 @@ public class PutHelper<K, V> extends BaseDaoHelper<K, V>
                                                                      colName));
                 }
                 
-                mutator.addDeletion(keyBytes, _entityMeta.getFamilyName(), colName, SER_BYTES);
+                mutator.addDeletion(keyBytes, _entityMeta.getFamilyName(), colName, SER_BYTES, clock);
             }
         }
 

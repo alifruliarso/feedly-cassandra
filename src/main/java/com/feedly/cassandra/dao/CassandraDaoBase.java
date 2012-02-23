@@ -1,6 +1,5 @@
 package com.feedly.cassandra.dao;
 
-import java.lang.annotation.Annotation;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.Collection;
@@ -11,8 +10,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.feedly.cassandra.IKeyspaceFactory;
-import com.feedly.cassandra.anno.ColumnFamily;
 import com.feedly.cassandra.entity.EntityMetadata;
+import com.feedly.cassandra.entity.IndexMetadata;
 
 public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
 {
@@ -25,6 +24,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     private FindHelper<K, V> _findHelper;
     private PutHelper<K, V> _putHelper;
     private IKeyspaceFactory _keyspaceFactory;
+    private IStaleIndexValueStrategy _staleIndexValueStrategy;
     
     protected CassandraDaoBase()
     {
@@ -50,26 +50,8 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
                 throw new IllegalStateException("could not determine value class");
         }
 
-        String colFamily = null;
-        boolean forceCompositeColumns = false;
-        for(Annotation anno : valueClass.getAnnotations())
-        {
-            if(anno.annotationType().equals(ColumnFamily.class))
-            {
-                ColumnFamily cf = (ColumnFamily) anno;
-                colFamily = cf.name();
-                if(colFamily.equals(""))
-                    colFamily = valueClass.getSimpleName();
 
-                forceCompositeColumns = cf.forceCompositeColumns();
-                break;
-            }
-        }
-
-        if(colFamily == null)
-            throw new IllegalStateException(valueClass.getSimpleName() + " missing @ColumnFamily annotation");
-
-        _entityMeta = new EntityMetadata<V>(valueClass, colFamily, forceCompositeColumns);
+        _entityMeta = new EntityMetadata<V>(valueClass);
 
         if(!_entityMeta.getKeyMetadata().getFieldType().equals(keyClass))
             throw new IllegalArgumentException(String.format("DAO/entity key mismatch: %s != %s",
@@ -78,7 +60,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
 
 
 
-        _logger.info(getClass().getSimpleName(), new Object[] {"[", colFamily, "] -> ", _entityMeta.toString()});
+        _logger.info(getClass().getSimpleName(), new Object[] {"[", _entityMeta.getFamilyName(), "] -> ", _entityMeta.toString()});
     }
 
     public void setKeyspaceFactory(IKeyspaceFactory keyspaceFactory)
@@ -86,13 +68,32 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         _keyspaceFactory = keyspaceFactory;
     }
 
+    public void setStaleValueIndexStrategy(IStaleIndexValueStrategy strategy)
+    {
+        _staleIndexValueStrategy = strategy;
+    }
+    
     public void init()
     {
         if(_keyspaceFactory == null)
             throw new IllegalStateException("keyspace factory not set");
             
+        if(_staleIndexValueStrategy == null)
+        {
+            _staleIndexValueStrategy = 
+                    new IStaleIndexValueStrategy()
+                    {
+                        @Override
+                        public void handle(EntityMetadata<?> entity, IndexMetadata index, Collection<StaleIndexValue> values)
+                        {
+                            _logger.warn("not handling {} stale values for {}", values.size(), entity.getFamilyName());
+                        }
+                
+                    };
+        }
+        
         _getHelper = new GetHelper<K, V>(_entityMeta, _keyspaceFactory);
-        _findHelper = new FindHelper<K, V>(_entityMeta, _keyspaceFactory);
+        _findHelper = new FindHelper<K, V>(_entityMeta, _keyspaceFactory, _staleIndexValueStrategy);
         _putHelper = new PutHelper<K, V>(_entityMeta, _keyspaceFactory);
     }
     
@@ -170,6 +171,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         return _getHelper.mget(keys);
     }
 
+    
     @Override
     public V find(V template)
     {
@@ -204,5 +206,23 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     public Collection<V> mfind(V template, Set<? extends Object> includes, Set<String> excludes)
     {
         return _findHelper.mfind(template, includes, excludes);
+    }
+
+    @Override
+    public Collection<V> mfindBetween(V startTemplate, V endTemplate)
+    {
+        return _findHelper.mfindBetween(startTemplate, endTemplate);
+    }
+
+    @Override
+    public Collection<V> mfindBetween(V startTemplate, V endTemplate, Object startColumn, Object endColumn)
+    {
+        return _findHelper.mfindBetween(startTemplate, endTemplate, startColumn, endColumn);
+    }
+
+    @Override
+    public Collection<V> mfindBetween(V startTemplate, V endTemplate, Set<? extends Object> includes, Set<String> excludes)
+    {
+        return _findHelper.mfindBetween(startTemplate, endTemplate, includes, excludes);
     }
 }

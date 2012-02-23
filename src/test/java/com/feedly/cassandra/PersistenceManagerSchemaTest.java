@@ -14,6 +14,7 @@ import com.feedly.cassandra.anno.ColumnFamily;
 import com.feedly.cassandra.entity.enhance.CompositeIndexedBean;
 import com.feedly.cassandra.entity.enhance.IndexedBean;
 import com.feedly.cassandra.entity.enhance.ListBean;
+import com.feedly.cassandra.entity.enhance.PartitionedIndexBean;
 import com.feedly.cassandra.entity.enhance.SampleBean;
 import com.feedly.cassandra.entity.upd_enhance.SampleBean2;
 import com.feedly.cassandra.test.CassandraServiceTestBase;
@@ -109,31 +110,24 @@ public class PersistenceManagerSchemaTest extends CassandraServiceTestBase
         
         String indexBeanName = IndexedBean.class.getAnnotation(ColumnFamily.class).name();
         String compositeIndexBeanName = CompositeIndexedBean.class.getAnnotation(ColumnFamily.class).name();
+        String partitionedIndexBeanName = PartitionedIndexBean.class.getAnnotation(ColumnFamily.class).name();
         
-        boolean foundIndexBeanIdx = false, foundCompositeIndexBeanIdx = false;
-        boolean foundIndexBeanPrevVal = false, foundCompositeIndexBeanPrevVal = false;
-        boolean foundIndexBeanWal = false, foundCompositeIndexBeanWal = false;
+        boolean foundIndexBeanIdx = false, foundCompositeIndexBeanIdx = false, foundPartitionedIndexBeanIdx = false;
+        boolean foundIndexBeanWal = false, foundCompositeIndexBeanWal = false, foundPartitionedIndexBeanWal = false;
         
         for(ColumnFamilyDefinition cfdef : cluster.describeKeyspace(KEYSPACE).getCfDefs())
         {
             String name = cfdef.getName();
-            if(name.contains("_idx_"))
+            if(name.endsWith("_idx"))
             {
-                if(name.equals(indexBeanName + "_idx_longVal"))
+                if(name.equals(indexBeanName + "_idx"))
                     foundIndexBeanIdx = true;
-                else if(name.equals(compositeIndexBeanName + "_idx_longVal"))
+                else if(name.equals(compositeIndexBeanName + "_idx"))
                     foundCompositeIndexBeanIdx = true;
+                else if(name.equals(partitionedIndexBeanName + "_idx"))
+                    foundPartitionedIndexBeanIdx = true;
                 else
                     fail("unrecognized index table " + name);
-            }
-            else if(name.contains("_idxpval_"))
-            {
-                if(name.equals(indexBeanName + "_idxpval_longVal"))
-                    foundIndexBeanPrevVal = true;
-                else if(name.equals(compositeIndexBeanName + "_idxpval_longVal"))
-                    foundCompositeIndexBeanPrevVal = true;
-                else
-                    fail("unrecognized previous value index table " + name);
             }
             else if(name.endsWith("_idxwal"))
             {
@@ -141,17 +135,19 @@ public class PersistenceManagerSchemaTest extends CassandraServiceTestBase
                     foundIndexBeanWal = true;
                 else if(name.equals(compositeIndexBeanName + "_idxwal"))
                     foundCompositeIndexBeanWal = true;
+                else if(name.equals(partitionedIndexBeanName + "_idxwal"))
+                    foundPartitionedIndexBeanWal = true;
                 else
                     fail("unrecognized WAL index table " + name);
             }
         }
         
         assertTrue(foundCompositeIndexBeanIdx);
-        assertTrue(foundCompositeIndexBeanPrevVal);
         assertTrue(foundCompositeIndexBeanWal);
         assertTrue(foundIndexBeanIdx);
-        assertTrue(foundIndexBeanPrevVal);
         assertTrue(foundIndexBeanWal);
+        assertTrue(foundPartitionedIndexBeanIdx);
+        assertTrue(foundPartitionedIndexBeanWal);
     }
     
     @Test

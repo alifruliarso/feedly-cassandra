@@ -33,7 +33,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.feedly.cassandra.anno.ColumnFamily;
+import com.feedly.cassandra.entity.EIndexType;
 import com.feedly.cassandra.entity.EntityMetadata;
+import com.feedly.cassandra.entity.IndexMetadata;
 import com.feedly.cassandra.entity.PropertyMetadata;
 import com.feedly.cassandra.entity.enhance.ColumnFamilyTransformTask;
 import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
@@ -147,12 +149,11 @@ public class PersistenceManager implements IKeyspaceFactory
         return HFactory.createKeyspace(_keyspace, _cluster);
     }
     
-    
     @SuppressWarnings({ "rawtypes", "unchecked" })
     private void syncColumnFamily(Class<?> family, KeyspaceDefinition keyspaceDef)
     {
         ColumnFamily annotation = family.getAnnotation(ColumnFamily.class);
-        EntityMetadata<?> meta = new EntityMetadata(family, annotation.name(), annotation.forceCompositeColumns());
+        EntityMetadata<?> meta = new EntityMetadata(family);
         
         String familyName = annotation.name();
         ColumnFamilyDefinition existing = null;
@@ -186,20 +187,21 @@ public class PersistenceManager implements IKeyspaceFactory
             
             Set<String> hashIndexed = new HashSet<String>();
             Set<String> rangeIndexed = new HashSet<String>();
-            for(PropertyMetadata pm : meta.getProperties())
+            for(IndexMetadata im : meta.getIndexes())
             {
-                if(pm.isHashIndexed())
+                if(im.getType() == EIndexType.HASH)
                 {
-                    cfDef.addColumnDefinition(createColDef(meta, familyName, pm));
+                    PropertyMetadata pm = im.getIndexedProperties().get(0);
+                    cfDef.addColumnDefinition(createColDef(meta, familyName, pm)); //must be exactly 1 prop
                     hashIndexed.add(pm.getPhysicalName());
                 }
-
-                syncRangeIndexTables(familyName, pm, keyspaceDef);
-                if(pm.isRangeIndexed())
-                    rangeIndexed.add(pm.getPhysicalName());
+                else
+                {
+                    rangeIndexed.add(im.id());
+                }
             }
             
-            syncRangeIndexWalTable(familyName, !rangeIndexed.isEmpty(), keyspaceDef);
+            syncRangeIndexTables(meta, !rangeIndexed.isEmpty(), keyspaceDef);
             
             cfDef.setCompressionOptions(compressionOptions(annotation));
             _logger.info("{}: compression options: {}, hash indexed columns: {}, range indexed columns", 
@@ -215,26 +217,30 @@ public class PersistenceManager implements IKeyspaceFactory
             boolean doUpdate = false;
             boolean hasRangeIndexes = false;
             
-            Set<PropertyMetadata> missing = new HashSet<PropertyMetadata>(meta.getProperties());
+            Set<PropertyMetadata> hashIndexedProps = new HashSet<PropertyMetadata>();
+            for(IndexMetadata im : meta.getIndexes())
+            {
+                if(im.getType() == EIndexType.HASH)
+                    hashIndexedProps.add(im.getIndexedProperties().get(0)); //must be exactly 1
+                else
+                    hasRangeIndexes = true;
+            }
+            
             //check if existing column metadata is in sync
             for(ColumnDefinition colMeta : existing.getColumnMetadata())
             {
                 PropertyMetadata pm = meta.getPropertyByPhysicalName(StringSerializer.get().fromByteBuffer(colMeta.getName()));
                 if(pm != null)
                 {
-                    if(colMeta.getIndexType() != null && !pm.isHashIndexed())
+                    boolean isHashIndexed = hashIndexedProps.remove(pm);
+                    
+                    if(colMeta.getIndexType() != null && isHashIndexed)
                         _logger.warn("{}.{} is indexed in cassandra, but not in the data model. manual intervention needed", 
                                      familyName, pm.getPhysicalName());
                     
-                    if(colMeta.getIndexType() == null && pm.isHashIndexed())
+                    if(colMeta.getIndexType() == null && isHashIndexed)
                         throw new IllegalStateException(familyName + "." + pm.getPhysicalName() + 
                                 " is not indexed in cassandra, manually add the index and then restart");
-                    
-                    syncRangeIndexTables(familyName, pm, keyspaceDef);
-                    if(pm.isRangeIndexed())
-                        hasRangeIndexes = true;
-                    
-                    missing.remove(pm);
                 }
                 else
                 {
@@ -242,17 +248,14 @@ public class PersistenceManager implements IKeyspaceFactory
                 }
             }
 
-            syncRangeIndexWalTable(familyName, hasRangeIndexes, keyspaceDef);
+            syncRangeIndexTables(meta, hasRangeIndexes, keyspaceDef);
             
-            for(PropertyMetadata pm : missing)
+            for(PropertyMetadata pm : hashIndexedProps)
             {
-                if(pm.isHashIndexed())
-                {
-                    existing.addColumnDefinition(createColDef(meta, familyName, pm));
-                    
-                    _logger.info("adding index on {}.{}", familyName, pm.getPhysicalName()); 
-                    doUpdate = true;
-                }
+                existing.addColumnDefinition(createColDef(meta, familyName, pm));
+                
+                _logger.info("adding index on {}.{}", familyName, pm.getPhysicalName()); 
+                doUpdate = true;
             }
             
             if(!annotation.compressed())
@@ -283,29 +286,52 @@ public class PersistenceManager implements IKeyspaceFactory
         }
     }
 
-    private void syncRangeIndexWalTable(String cfName, boolean hasRangeIndexes, KeyspaceDefinition keyspaceDef)
+    private void syncRangeIndexTables(EntityMetadata<?> meta, boolean hasRangeIndexes, KeyspaceDefinition keyspaceDef)
     {
-        String walCfName = cfName + "_idxwal"; 
-        boolean exists = false;
+        boolean walExists = false, idxExists = false, revIdxExists = false;
         for(ColumnFamilyDefinition existing : keyspaceDef.getCfDefs())
         {
-            if(existing.getName().equals(walCfName))
-            {
-                exists = true;
+            if(existing.getName().equals(meta.getWalFamilyName()))
+                walExists = true;
+            else if(existing.getName().equals(meta.getIndexFamilyName()))
+                idxExists = true;
+            
+            if(walExists && revIdxExists && idxExists)
                 break;
-            }
         }
 
-        if(exists && !hasRangeIndexes)
-            _logger.warn("{}: does not have range indexes but 'write ahead log' table {} exists. manual drop may be safely done.", cfName, walCfName);
+        
+        if(!hasRangeIndexes)
+        {
+            if(walExists)
+                _logger.warn("{}: does not have range indexes but 'write ahead log' table {} exists. manual drop may be safely done.", 
+                             meta.getFamilyName(), meta.getWalFamilyName());
+            if(idxExists)
+                _logger.warn("{}: does not have range indexes but 'index' table {} exists. manual drop may be safely done.", 
+                             meta.getFamilyName(), meta.getIndexFamilyName());
+        }
+        
         //assume if the table exists, it is created correctly
 
-        if(!exists && hasRangeIndexes)
+        if(hasRangeIndexes)
         {
-            ColumnFamilyDefinition cfDef = new BasicColumnFamilyDefinition(HFactory.createColumnFamilyDefinition(_keyspace, walCfName));
-            _logger.info("{}: has range indexes - create 'write ahead log' table {}", cfName, walCfName);
-            cfDef.setComparatorType(ComparatorType.UTF8TYPE);
-            _cluster.addColumnFamily(cfDef, true);
+            if(!walExists)
+            {
+                ColumnFamilyDefinition cfDef = new BasicColumnFamilyDefinition(HFactory.createColumnFamilyDefinition(_keyspace, meta.getWalFamilyName()));
+                _logger.info("{}: has range indexes - create 'write ahead log' table {}", meta.getFamilyName(), meta.getWalFamilyName());
+                cfDef.setComparatorType(ComparatorType.UTF8TYPE);
+                addCompressionOptions(cfDef);
+                _cluster.addColumnFamily(cfDef, true);
+            }
+            if(!idxExists)
+            {
+                ColumnFamilyDefinition cfDef = new BasicColumnFamilyDefinition(HFactory.createColumnFamilyDefinition(_keyspace, meta.getIndexFamilyName()));
+                _logger.info("{}: has range indexes - create 'index' table {}", meta.getFamilyName(), meta.getIndexFamilyName());
+                cfDef.setComparatorType(ComparatorType.DYNAMICCOMPOSITETYPE);
+                cfDef.setComparatorTypeAlias(DynamicComposite.DEFAULT_DYNAMIC_COMPOSITE_ALIASES);
+                addCompressionOptions(cfDef);
+                _cluster.addColumnFamily(cfDef, true);
+            }
         }
     }
     
@@ -319,48 +345,47 @@ public class PersistenceManager implements IKeyspaceFactory
         def.setCompressionOptions(opts);
     }
     
-    private void syncRangeIndexTables(String cfName, PropertyMetadata pm, KeyspaceDefinition keyspaceDef)
-    {
-        String prevIdxValCfName = cfName + "_idxpval_" + pm.getPhysicalName(); 
-        String idxCfName = cfName + "_idx_" + pm.getPhysicalName();
-        
-        boolean idxExists = false, prevValExists = false;
-        for(ColumnFamilyDefinition existing : keyspaceDef.getCfDefs())
-        {
-            if(existing.getName().equals(idxCfName))
-                idxExists = true;
-            if(existing.getName().equals(prevIdxValCfName))
-                prevValExists = true;
-        }
-        
-        //assume if the tables exist, they are created correctly
-        if(!idxExists && pm.isRangeIndexed())
-        {
-            ColumnFamilyDefinition cfDef = new BasicColumnFamilyDefinition(HFactory.createColumnFamilyDefinition(_keyspace, idxCfName));
-            _logger.info("{}: create index column family {}", cfName, idxCfName);
-            cfDef.setComparatorType(ComparatorType.DYNAMICCOMPOSITETYPE);
-            cfDef.setComparatorTypeAlias(DynamicComposite.DEFAULT_DYNAMIC_COMPOSITE_ALIASES);
-            addCompressionOptions(cfDef);
-            _cluster.addColumnFamily(cfDef, true);
-        }
-        else if(idxExists && !pm.isRangeIndexed())
-            _logger.warn("{}: range index table {} exists, but no range index is defined. index table may be safely dropped.", 
-                         cfName, idxCfName);
-        
-        if(!prevValExists && pm.isRangeIndexed())
-        {
-            ColumnFamilyDefinition cfDef = new BasicColumnFamilyDefinition(HFactory.createColumnFamilyDefinition(_keyspace, prevIdxValCfName));
-            _logger.info("{}: create previous value index column family {}", cfName, prevIdxValCfName);
-            cfDef.setComparatorType(ComparatorType.DYNAMICCOMPOSITETYPE);
-            cfDef.setComparatorTypeAlias(DynamicComposite.DEFAULT_DYNAMIC_COMPOSITE_ALIASES);
-            addCompressionOptions(cfDef);
-            _cluster.addColumnFamily(cfDef, true);
-        }
-        else if(prevValExists && !pm.isRangeIndexed())
-            _logger.warn("{}: range index previous value table {} exists, but no range index is defined. index table may be safely dropped.", 
-                         cfName, prevIdxValCfName);
-
-    }
+//    private void syncRangeIndexTables(String cfName, PropertyMetadata pm, KeyspaceDefinition keyspaceDef)
+//    {
+//        IndexMetadata im = pm.getIndexMetadata();
+//        
+//        boolean idxExists = false, idxLogExists = false;
+//        for(ColumnFamilyDefinition existing : keyspaceDef.getCfDefs())
+//        {
+//            if(existing.getName().equals(im.getIndexFamilyName()))
+//                idxExists = true;
+//            if(existing.getName().equals(im.getLogFamilyName()))
+//                idxLogExists = true;
+//        }
+//        
+//        //assume if the tables exist, they are created correctly
+//        if(!idxExists && isRangeIndexed(pm))
+//        {
+//            ColumnFamilyDefinition cfDef = new BasicColumnFamilyDefinition(HFactory.createColumnFamilyDefinition(_keyspace, im.getIndexFamilyName()));
+//            _logger.info("{}: create index column family {}", cfName, im.getIndexFamilyName());
+//            cfDef.setComparatorType(ComparatorType.DYNAMICCOMPOSITETYPE);
+//            cfDef.setComparatorTypeAlias(DynamicComposite.DEFAULT_DYNAMIC_COMPOSITE_ALIASES);
+//            addCompressionOptions(cfDef);
+//            _cluster.addColumnFamily(cfDef, true);
+//        }
+//        else if(idxExists && !isRangeIndexed(pm))
+//            _logger.warn("{}: range index table {} exists, but no range index is defined. index table may be safely dropped.", 
+//                         cfName, im.getIndexFamilyName());
+//        
+//        if(!idxLogExists && isRangeIndexed(pm))
+//        {
+//            ColumnFamilyDefinition cfDef = new BasicColumnFamilyDefinition(HFactory.createColumnFamilyDefinition(_keyspace, im.getLogFamilyName()));
+//            _logger.info("{}: create index log column family {}", cfName, im.getLogFamilyName());
+//            cfDef.setComparatorType(ComparatorType.DYNAMICCOMPOSITETYPE);
+//            cfDef.setComparatorTypeAlias(DynamicComposite.DEFAULT_DYNAMIC_COMPOSITE_ALIASES);
+//            addCompressionOptions(cfDef);
+//            _cluster.addColumnFamily(cfDef, true);
+//        }
+//        else if(idxLogExists && !isRangeIndexed(pm))
+//            _logger.warn("{}: range index log table {} exists, but no range index is defined. index table may be safely dropped.", 
+//                         cfName, im.getLogFamilyName());
+//
+//    }
 
     private BasicColumnDefinition createColDef(EntityMetadata<?> meta, String familyName, PropertyMetadata pm)
     {

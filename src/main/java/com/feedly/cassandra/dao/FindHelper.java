@@ -1,158 +1,182 @@
 package com.feedly.cassandra.dao;
 
-import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Collection;
-import java.util.List;
+import java.util.HashSet;
 import java.util.Set;
 
-import me.prettyprint.cassandra.model.IndexedSlicesQuery;
-import me.prettyprint.hector.api.beans.OrderedRows;
-import me.prettyprint.hector.api.beans.Row;
-import me.prettyprint.hector.api.factory.HFactory;
-
 import com.feedly.cassandra.IKeyspaceFactory;
+import com.feedly.cassandra.entity.EIndexType;
 import com.feedly.cassandra.entity.EntityMetadata;
+import com.feedly.cassandra.entity.IndexMetadata;
 import com.feedly.cassandra.entity.PropertyMetadata;
-import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 
+@SuppressWarnings("unchecked")
 public class FindHelper<K, V> extends LoadHelper<K, V>
 {
-    FindHelper(EntityMetadata<V> meta, IKeyspaceFactory factory)
+    private final HashIndexFindHelper<K, V> _hashIndexFinder;
+    private final RangeIndexFindHelper<K, V> _rangeIndexFinder;
+    
+    FindHelper(EntityMetadata<V> meta, IKeyspaceFactory factory, IStaleIndexValueStrategy staleValueStrategy)
     {
         super(meta, factory);
+        _hashIndexFinder = new HashIndexFindHelper<K, V>(meta, factory);
+        _rangeIndexFinder = new RangeIndexFindHelper<K, V>(meta, factory, staleValueStrategy);
     }
-
-    private V uniqueValue(Collection<V> values)
+    
+    private IndexMetadata chooseIndex(boolean rangeOnly, V... templates) 
     {
-        if(values == null || values.isEmpty())
-            return null;
+        Set<PropertyMetadata> props = new HashSet<PropertyMetadata>();
+        BitSet dirty = asEntity(templates[0]).getModifiedFields();
         
-        if(values.size() > 1)
-            throw new IllegalStateException("non-unique value");
+        if(templates.length > 1)
+        {
+            dirty = (BitSet) dirty.clone();
+            for(int i = templates.length-1; i > 0; i--)
+                dirty.and(asEntity(templates[i]).getModifiedFields());
+        }
+            
+        for(int i = dirty.nextSetBit(0); i >= 0; i = dirty.nextSetBit(i + 1))
+        {
+            props.add(_entityMeta.getProperties().get(i));
+        }
         
-        return values.iterator().next();
+        if(props.isEmpty())
+            throw new IllegalArgumentException("no properties set");
+        
+        IndexMetadata matching = null;
+        int matchCnt = 0;
+        for(IndexMetadata im : _entityMeta.getIndexes())
+        {
+            if(rangeOnly && im.getType() != EIndexType.RANGE)
+                continue;
+            
+            if(props.equals(im.getIndexedProperties()))
+                return im;
+
+            int cnt = 0;
+            for(PropertyMetadata indexedProp : im.getIndexedProperties())
+            {
+                if(props.contains(indexedProp))
+                    cnt++;
+                else
+                    break;
+            }
+
+            if(cnt > matchCnt)
+            {
+                matchCnt = cnt;
+                matching = im;
+            }
+            else if(cnt > 0 && cnt == matchCnt && im.getIndexedProperties().size() < matching.getIndexedProperties().size())
+            {
+                //smaller number of columns
+                matching = im;
+            }
+        }
+        
+        if(matching != null)
+            return matching;
+        
+        throw new IllegalStateException("no applicable index for properties " + props);
     }
+    
     
     public V find(V template)
     {
-        return uniqueValue(mfind(template));
+        IndexMetadata index = chooseIndex(false, template);
+        if(index.getType() == EIndexType.HASH)
+        {
+            return _hashIndexFinder.find(template, index);
+        }
+        else 
+        {
+            return _rangeIndexFinder.find(template, index);
+        }
     }
     
 
     public V find(V template, Object start, Object end)
     {
-        return uniqueValue(mfind(template, start, end));
+        IndexMetadata index = chooseIndex(false, template);
+        if(index.getType() == EIndexType.HASH)
+        {
+            return _hashIndexFinder.find(template, start, end, index);
+        }
+        
+        throw new IllegalStateException(); //never happens
     }
 
     public V find(V template, Set<? extends Object> includes, Set<String> excludes)
     {
-        return uniqueValue(mfind(template, includes, excludes));
+        IndexMetadata index = chooseIndex(false, template);
+        if(index.getType() == EIndexType.HASH)
+        {
+            return _hashIndexFinder.find(template, includes, excludes, index);
+        }
+        
+        throw new IllegalStateException(); //never happens
     }
 
     public Collection<V> mfind(V template)
     {
-        return bulkFindByIndexPartial(template, null, null, null);
+        IndexMetadata index = chooseIndex(false, template);
+        if(index.getType() == EIndexType.HASH)
+        {
+            return _hashIndexFinder.mfind(template, index);
+        }
+        else 
+        {
+            return _rangeIndexFinder.mfind(template, index);
+        }
     }
 
 
     public Collection<V> mfind(V template, Object start, Object end)
     {
-        return bulkFindByIndexPartial(template, propertyName(start), propertyName(end), null);
-    }
-    
-    @SuppressWarnings("unchecked")
-    public Collection<V> mfind(V template, Set<? extends Object> includes, Set<String> excludes)
-    {
-        if(includes != null && excludes != null)
-            throw new IllegalArgumentException("either includes or excludes should be specified, not both");
-        
-        if(includes != null && excludes != null)
-            throw new IllegalArgumentException("either includes or excludes should be specified, not both");
-        
-        List<byte[]> colNames = new ArrayList<byte[]>();
-        List<PropertyMetadata> fullCollectionProperties = derivePartialColumns(colNames, includes, excludes);
-
-        List<V> values = bulkFindByIndexPartial(template, null, null, colNames);
-        List<K> keys = new ArrayList<K>(values.size());
-        PropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
-        for(V v : values)
-            keys.add((K) invokeGetter(keyMeta, v));
-        
-        return addFullCollectionProperties(keys, values, fullCollectionProperties);
-    }
-
-
-    @SuppressWarnings("unchecked")
-    private List<V> bulkFindByIndexPartial(V template, byte[] startBytes, byte[] endBytes, List<byte[]> colNames)
-    {
-        IEnhancedEntity entity = asEntity(template);
-        BitSet dirty = entity.getModifiedFields();
-        List<PropertyMetadata> properties = _entityMeta.getProperties();
-        for(int i = dirty.nextSetBit(0); i >= 0; i = dirty.nextSetBit(i + 1))
+        IndexMetadata index = chooseIndex(false, template);
+        if(index.getType() == EIndexType.HASH)
         {
-            PropertyMetadata pm = properties.get(i);
-            if(pm.isHashIndexed())
-            {
-                Object propVal = invokeGetter(pm, template);
-                if(propVal != null)
-                {
-                    PropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
-                    IndexedSlicesQuery<byte[], byte[], byte[]> query = HFactory.createIndexedSlicesQuery(_keyspaceFactory.createKeyspace(), SER_BYTES, SER_BYTES, SER_BYTES);
-                    query.setColumnFamily(_entityMeta.getFamilyName());
-                    query.setRowCount(CassandraDaoBase.ROW_RANGE_SIZE);
-                    query.addEqualsExpression(pm.getPhysicalNameBytes(), serialize(propVal, false, pm.getSerializer()));
-                    
-                    if(colNames != null)
-                        query.setColumnNames(colNames);
-                    else
-                        query.setRange(startBytes, endBytes, false, CassandraDaoBase.COL_RANGE_SIZE);
-                    
-                    OrderedRows<byte[],byte[],byte[]> rows = query.execute().get();
-                    
-                    List<V> values = new ArrayList<V>();
-                    boolean checkDuplicateKey = false;
-                    while(true)
-                    {
-                        /*
-                         * the last key of the previous range and the first key of the current range may overlap
-                         */
-                        for(Row<byte[], byte[], byte[]> row : rows)
-                        {
-                            K key = (K) keyMeta.getSerializer().fromBytes(row.getKey());
-                            
-                            if(checkDuplicateKey)
-                            {
-                                K lastKey = (K) invokeGetter(keyMeta, values.get(values.size()-1));
-                                
-                                if(key.equals(lastKey))
-                                    continue;
-                                
-                                checkDuplicateKey = false;
-                            }
-                            
-                            V value = fromColumnSlice(key, null, keyMeta, row.getKey(), null, row.getColumnSlice(), endBytes);
-                            
-                            if(value != null)
-                                values.add(value);
-                        }
-                        
-                        if(rows.getCount() == CassandraDaoBase.ROW_RANGE_SIZE)
-                        {
-                            query.setStartKey(rows.getList().get(CassandraDaoBase.ROW_RANGE_SIZE-1).getKey());
-                            rows = query.execute().get();
-                            checkDuplicateKey = true;
-                        }
-                        else 
-                            break;
-                    } 
-                    
-                    return values;
-                }
-            }
+            return _hashIndexFinder.mfind(template, start, end, index);
+        }
+        else 
+        {
+            return _rangeIndexFinder.mfind(template, start, end, index);
         }
         
-        throw new IllegalArgumentException("no applicable index found.");
+    }
+    
+    public Collection<V> mfind(V template, Set<? extends Object> includes, Set<String> excludes)
+    {
+        IndexMetadata index = chooseIndex(false, template);
+        if(index.getType() == EIndexType.HASH)
+        {
+            return _hashIndexFinder.mfind(template, includes, excludes, index);
+        }
+        else
+        {
+            return _rangeIndexFinder.mfind(template, includes, excludes, index);
+        }
+    }
+    
+    public Collection<V> mfindBetween(V startTemplate, V endTemplate)
+    {
+        IndexMetadata index = chooseIndex(true, startTemplate, endTemplate);
+
+        return _rangeIndexFinder.mfindBetween(startTemplate, endTemplate, index);
     }
 
+    public Collection<V> mfindBetween(V startTemplate, V endTemplate, Object startColumn, Object endColumn)
+    {
+        IndexMetadata index = chooseIndex(true, startTemplate, endTemplate);
+
+        return _rangeIndexFinder.mfindBetween(startTemplate, endTemplate, startColumn, endColumn, index);
+    }
+
+    public Collection<V> mfindBetween(V startTemplate, V endTemplate, Set<? extends Object> includes, Set<String> excludes)
+    {
+        IndexMetadata index = chooseIndex(true, startTemplate, endTemplate);
+
+        return _rangeIndexFinder.mfindBetween(startTemplate, endTemplate, includes, excludes, index);
+    }
 }

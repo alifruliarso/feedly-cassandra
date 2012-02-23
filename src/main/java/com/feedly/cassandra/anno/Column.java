@@ -7,6 +7,8 @@ import java.lang.annotation.Target;
 
 import me.prettyprint.hector.api.Serializer;
 
+import com.feedly.cassandra.IIndexRowPartitioner;
+import com.feedly.cassandra.SingleIndexRowPartitioner;
 import com.feedly.cassandra.entity.ByteIndicatorSerializer;
 
 
@@ -48,4 +50,7 @@ public @interface Column
      * @return true if the column should be range indexed
      */
     public boolean rangeIndexed() default false;
+    
+    @SuppressWarnings("rawtypes")
+    public Class<? extends IIndexRowPartitioner> rangeIndexPartitioner() default SingleIndexRowPartitioner.class;
 }

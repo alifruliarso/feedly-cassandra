@@ -4,14 +4,20 @@ import java.lang.reflect.Field;
 
 import com.feedly.cassandra.anno.Column;
 import com.feedly.cassandra.anno.ColumnFamily;
+import com.feedly.cassandra.anno.Index;
+import com.feedly.cassandra.anno.Indexes;
 import com.feedly.cassandra.anno.RowKey;
 import com.feedly.cassandra.entity.EntityUtils;
 
 @ColumnFamily(name="indexedbean")
+@Indexes(@Index(props = {"strVal", "longVal"}))
 public class IndexedBean implements Comparable<IndexedBean>
 {
     @RowKey
     private Long rowKey;
+    
+    @Column(col="c")
+    private Character charVal;
     
     @Column(col="s", hashIndexed = true)
     private String strVal;
@@ -94,6 +100,16 @@ public class IndexedBean implements Comparable<IndexedBean>
     public int compareTo(IndexedBean o)
     {
         return rowKey.compareTo(o.rowKey);
+    }
+
+    public Character getCharVal()
+    {
+        return charVal;
+    }
+
+    public void setCharVal(Character cVal)
+    {
+        this.charVal = cVal;
     }
 
 }

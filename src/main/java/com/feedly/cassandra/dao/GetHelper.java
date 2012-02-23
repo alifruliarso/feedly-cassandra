@@ -61,7 +61,7 @@ class GetHelper<K, V> extends LoadHelper<K, V>
         return value;
     }
 
-    public Collection<V> mget(Collection<K> keys)
+    public List<V> mget(Collection<K> keys)
     {
         return bulkLoadFromMultiGet(keys, null, null, null, null, false);
     }

@@ -5,6 +5,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -19,7 +20,11 @@ import me.prettyprint.hector.api.Serializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.feedly.cassandra.IIndexRowPartitioner;
 import com.feedly.cassandra.anno.Column;
+import com.feedly.cassandra.anno.ColumnFamily;
+import com.feedly.cassandra.anno.Index;
+import com.feedly.cassandra.anno.Indexes;
 import com.feedly.cassandra.anno.RowKey;
 import com.feedly.cassandra.anno.UnmappedColumnHandler;
 
@@ -36,6 +41,10 @@ public class EntityMetadata<V>
     private final PropertyMetadata _unmappedHandler;
     private final boolean _useCompositeColumns;
     private final String _familyName;
+    private final String _walFamilyName;
+    private final String _idxFamilyName;
+    private final List<IndexMetadata> _indexes;
+    private final Map<PropertyMetadata, List<IndexMetadata>> _indexesByProp;
     
     static final Set<Class<?>> ALLOWED_TYPES;
 
@@ -54,12 +63,17 @@ public class EntityMetadata<V>
         return ALLOWED_TYPES;
     }
     
-    public EntityMetadata(Class<V> beanClass, String familyName, boolean forceCompositeColumns)
+    public EntityMetadata(Class<V> clazz)
     {
-        _clazz = beanClass;
-        _familyName = familyName;
+        _clazz = clazz;
+        ColumnFamily familyAnno = clazz.getAnnotation(ColumnFamily.class);
+
+        _familyName = familyAnno.name();
+        _walFamilyName = familyAnno.name() + "_idxwal";
+        _idxFamilyName = familyAnno.name() + "_idx";
+
         Set<Annotation> beanAnnos = new HashSet<Annotation>();
-        for(Annotation a : beanClass.getAnnotations())
+        for(Annotation a : clazz.getAnnotations())
             beanAnnos.add(a);
         
         _annotations = Collections.unmodifiableSet(beanAnnos);
@@ -67,79 +81,111 @@ public class EntityMetadata<V>
         Map<String, PropertyMetadata> props = new TreeMap<String, PropertyMetadata>(); 
         Map<String, PropertyMetadata>  propsByPhysical = new TreeMap<String, PropertyMetadata>();
         Map<String, Set<PropertyMetadata>> propsByAnno = new TreeMap<String, Set<PropertyMetadata>>();
+        List<IndexMetadata> indexes = new ArrayList<IndexMetadata>();
+        Map<PropertyMetadata, List<IndexMetadata>> indexesByProp = new HashMap<PropertyMetadata, List<IndexMetadata>>();
         PropertyMetadata keyMeta = null, unmappedHandler = null;
         boolean hasCollections = false;
 
-        for(Field f : beanClass.getDeclaredFields())
+        for(Field f : clazz.getDeclaredFields())
         {
-            if(f.isAnnotationPresent(Column.class) && 
-                    (f.getType().equals(Map.class) || f.getType().equals(List.class) || f.getType().equals(SortedMap.class)))
+            if(f.isAnnotationPresent(Column.class) && isCollectionType(f))
             {
                 hasCollections = true;
                 break;
             }
         }
         
-        _useCompositeColumns = hasCollections || forceCompositeColumns;
+        _useCompositeColumns = hasCollections || familyAnno.forceCompositeColumns();
 
-        for(Field f : beanClass.getDeclaredFields())
+        for(Field f : clazz.getDeclaredFields())
         {
             Method getter = getGetter(f);
             Method setter = getSetter(f);
-            if(getter != null && setter != null)
+            if(f.isAnnotationPresent(RowKey.class))
             {
-                if(f.isAnnotationPresent(RowKey.class))
-                {
-                    if(keyMeta != null)
-                        throw new IllegalArgumentException("@RowKey may only be used on one field.");
+                if(keyMeta != null)
+                    throw new IllegalArgumentException("@RowKey may only be used on one field.");
 
-                    RowKey anno = f.getAnnotation(RowKey.class);
-                    keyMeta = new PropertyMetadata(f, null, false, false, getter, setter, serializerClass(anno.value()),  false);
+                if(getter == null || setter == null)
+                    throw new IllegalArgumentException("@RowKey field must have valid getter and setter.");
+
+                RowKey anno = f.getAnnotation(RowKey.class);
+                keyMeta = new PropertyMetadata(f, null, getter, setter, serializerClass(anno.value()),  false);
+            }
+
+            if(f.isAnnotationPresent(UnmappedColumnHandler.class))
+            {
+                if(unmappedHandler != null)
+                    throw new IllegalArgumentException("@UnmappedColumnHandler may only be used on one field.");
+
+                if(!Map.class.equals(f.getType()) && !SortedMap.class.equals(f.getType()))
+                    throw new IllegalArgumentException("@UnmappedColumnHandler may only be used on a Map or SortedMap, not sub-interfaces or classes.");
+
+                if(getter == null || setter == null)
+                    throw new IllegalArgumentException("@UnmappedColumnHandler field must have valid getter and setter.");
+
+                UnmappedColumnHandler anno = f.getAnnotation(UnmappedColumnHandler.class);
+                unmappedHandler = new PropertyMetadata(f, null, getter, setter, serializerClass(anno.value()), _useCompositeColumns);
+            }
+
+            
+            if(f.isAnnotationPresent(Column.class))
+            {
+                if(getter == null || setter == null)
+                    throw new IllegalArgumentException("@Column field must have valid getter and setter.");
+
+                Column anno = f.getAnnotation(Column.class);
+                String col = anno.col();
+                if(col.equals(""))
+                    col = f.getName();
+                
+                if(anno.hashIndexed() && anno.rangeIndexed())
+                    throw new IllegalStateException(f.getName() + ": property can be range or hash indexed, not both");
+                
+                PropertyMetadata pm = new PropertyMetadata(f, col, getter, setter, serializerClass(anno.serializer()), _useCompositeColumns);
+                props.put(f.getName(), pm);
+                propsByPhysical.put(col, pm);
+
+                if(anno.hashIndexed() || anno.rangeIndexed())
+                {
+                    if(isCollectionType(f))
+                        throw new IllegalStateException(f.getName() + ": collection property cannot be indexed");
+                    
+                    if(anno.hashIndexed() && anno.rangeIndexed())
+                        throw new IllegalArgumentException(f.getName() + ": cannot be both hash and range indexed, select one or the other.");
+                    
+
+                    IndexMetadata idxMeta = new IndexMetadata(familyAnno.name(),
+                                                Collections.singletonList(pm), 
+                                                createPartitioner(anno.rangeIndexPartitioner()), 
+                                                anno.hashIndexed() ? EIndexType.HASH : EIndexType.RANGE);
+                    indexes.add(idxMeta);
+                    List<IndexMetadata> l = indexesByProp.get(pm);
+                    if(l == null)
+                    {
+                        l = new ArrayList<IndexMetadata>();
+                        indexesByProp.put(pm, l);
+                    }
+                    l.add(idxMeta);
                 }
 
                 if(f.isAnnotationPresent(UnmappedColumnHandler.class))
                 {
-                    if(unmappedHandler != null)
-                        throw new IllegalArgumentException("@UnmappedColumnHandler may only be used on one field.");
+                    if(keyMeta != null)
+                        throw new IllegalArgumentException(f.getName() + ": @UnmappedColumnHandler should not also be annotated as a mapped @Column.");
 
-                    if(!Map.class.equals(f.getType()) && !SortedMap.class.equals(f.getType()))
-                        throw new IllegalArgumentException("@UnmappedColumnHandler may only be used on a Map or SortedMap, not sub-interfaces or classes.");
-                    
-                    UnmappedColumnHandler anno = f.getAnnotation(UnmappedColumnHandler.class);
-                    unmappedHandler = new PropertyMetadata(f, null, false, false, getter, setter, serializerClass(anno.value()), _useCompositeColumns);
+                    keyMeta = new PropertyMetadata(f, null, getter, setter, serializerClass(anno.serializer()), _useCompositeColumns);
                 }
 
-                
-                if(f.isAnnotationPresent(Column.class))
+                for(Annotation a : f.getDeclaredAnnotations())
                 {
-                    Column anno = f.getAnnotation(Column.class);
-                    String col = anno.col();
-                    if(col.equals(""))
-                        col = f.getName();
-                    
-
-                    PropertyMetadata pm = new PropertyMetadata(f, col, anno.hashIndexed(), anno.rangeIndexed(), getter, setter, serializerClass(anno.serializer()), _useCompositeColumns);
-                    props.put(f.getName(), pm);
-                    propsByPhysical.put(col, pm);
-
-                    if(f.isAnnotationPresent(UnmappedColumnHandler.class))
+                    Set<PropertyMetadata> annos = propsByAnno.get(a.annotationType().getName());
+                    if(annos == null)
                     {
-                        if(keyMeta != null)
-                            throw new IllegalArgumentException(f.getName() + ": @UnmappedColumnHandler should not also be annotated as a mapped @Column.");
-
-                        keyMeta = new PropertyMetadata(f, null, false, false, getter, setter, serializerClass(anno.serializer()), _useCompositeColumns);
+                        annos = new TreeSet<PropertyMetadata>();
+                        propsByAnno.put(a.annotationType().getName(),  annos);
                     }
-
-                    for(Annotation a : f.getDeclaredAnnotations())
-                    {
-                        Set<PropertyMetadata> annos = propsByAnno.get(a.annotationType().getName());
-                        if(annos == null)
-                        {
-                            annos = new TreeSet<PropertyMetadata>();
-                            propsByAnno.put(a.annotationType().getName(),  annos);
-                        }
-                        annos.add(pm);
-                    }
+                    annos.add(pm);
                 }
             }
         }
@@ -164,6 +210,91 @@ public class EntityMetadata<V>
         List<PropertyMetadata> sorted = new ArrayList<PropertyMetadata>(props.values());
         Collections.sort(sorted);
         _props = Collections.unmodifiableList(sorted);
+        
+        /*
+         * now include indexes declared at the class level. Usually these are indexes that are on multiple columns
+         */
+        Index idxAnno = clazz.getAnnotation(Index.class);
+        Indexes idxArrAnno = clazz.getAnnotation(Indexes.class);
+        Index[] allIdxAnnos;
+        if(idxAnno == null)
+        {
+            allIdxAnnos = idxArrAnno == null ? new Index[0] : idxArrAnno.value(); 
+        }
+        else
+        {
+            if(idxArrAnno == null)
+                allIdxAnnos = new Index[] {idxAnno};
+            else
+            {
+                allIdxAnnos = new Index[idxArrAnno.value().length+1];
+                System.arraycopy(idxArrAnno.value(), 0, allIdxAnnos, 0, idxArrAnno.value().length);
+                allIdxAnnos[allIdxAnnos.length-1] = idxAnno;
+            }
+        }
+        
+        for(Index anno : allIdxAnnos)
+        {
+            List<PropertyMetadata> l = new ArrayList<PropertyMetadata>();
+            if(anno.props() == null || anno.props().length == 0)
+                throw new IllegalStateException("no properties referenced in index: ");
+                
+            for(String prop : anno.props())
+            {
+                PropertyMetadata p = _propsByName.get(prop);
+                if(prop == null)
+                    throw new IllegalStateException("unrecognized property referenced in index: " + prop);
+                
+                if(l.contains(p))
+                    throw new IllegalStateException("duplicate property referenced in index: " + prop);
+                
+                l.add(p);
+            }
+            
+            IndexMetadata im = new IndexMetadata(familyAnno.name(), l, createPartitioner(anno.partitioner()), EIndexType.RANGE);
+            indexes.add(im);
+            for(PropertyMetadata p : l)
+            {
+                List<IndexMetadata> pl = indexesByProp.get(p);
+                if(pl == null)
+                {
+                    pl = new ArrayList<IndexMetadata>();
+                    indexesByProp.put(p, pl);
+                }
+                
+                pl.add(im);
+            }
+        }
+        
+        
+        Set<String> indexIds = new HashSet<String>();
+        for(IndexMetadata m : indexes)
+        {
+            if(!indexIds.add(m.id()))
+                throw new IllegalStateException("duplicate index " + m);
+        }
+        _indexes = Collections.unmodifiableList(indexes);
+        for(Entry<PropertyMetadata, List<IndexMetadata>> entry : indexesByProp.entrySet())
+            entry.setValue(Collections.unmodifiableList(entry.getValue()));
+        
+        _indexesByProp = indexesByProp;
+    }
+
+    private IIndexRowPartitioner createPartitioner(Class<? extends IIndexRowPartitioner> clazz)
+    {
+        try
+        {
+            return clazz.newInstance();
+        }
+        catch(Exception ex)
+        {
+            throw new IllegalStateException("no no-arg constructor for partitioner " + clazz.getName());
+        }
+    }
+
+    private boolean isCollectionType(Field f)
+    {
+        return f.getType().equals(Map.class) || f.getType().equals(List.class) || f.getType().equals(SortedMap.class);
     }
 
 
@@ -238,6 +369,21 @@ public class EntityMetadata<V>
         return _props;
     }
   
+    public List<IndexMetadata> getIndexes()
+    {
+        return _indexes;
+    }
+    
+    public boolean isIndexed(PropertyMetadata pm)
+    {
+        return _indexesByProp.containsKey(pm);
+    }
+    
+    public List<IndexMetadata> getIndexes(PropertyMetadata pm)
+    {
+        List<IndexMetadata> l = _indexesByProp.get(pm);
+        return l == null ? Collections.<IndexMetadata>emptyList() : l;
+    }
     
     public Set<PropertyMetadata> getAnnotatedProperties(Class<? extends Annotation> annoType)
     {
@@ -264,6 +410,16 @@ public class EntityMetadata<V>
     public String getFamilyName()
     {
         return _familyName;
+    }
+    
+    public String getWalFamilyName()
+    {
+        return _walFamilyName;
+    }
+    
+    public String getIndexFamilyName()
+    {
+        return _idxFamilyName;
     }
     
     public Class<V> getType()

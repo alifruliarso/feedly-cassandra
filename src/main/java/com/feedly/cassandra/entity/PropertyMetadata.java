@@ -28,13 +28,9 @@ public class PropertyMetadata implements Comparable<PropertyMetadata>
     private final Class<?> _fieldClass;
     private final Serializer<?> _serializer;
     private final boolean _isCollection;
-    private final boolean _hashIndexed;
-    private final boolean _rangeIndexed;
     
     public PropertyMetadata(Field field,
                             String physicalName,
-                            boolean hashIndexed,
-                            boolean rangeIndexed,
                             Method getter,
                             Method setter,
                             Class<? extends Serializer<?>> serializerClass,
@@ -42,8 +38,6 @@ public class PropertyMetadata implements Comparable<PropertyMetadata>
     {
         _name = field.getName();
         _physicalName = physicalName;
-        _hashIndexed = hashIndexed;
-        _rangeIndexed = rangeIndexed;
         
         byte[] physNameBytes = null;
         
@@ -64,12 +58,6 @@ public class PropertyMetadata implements Comparable<PropertyMetadata>
         _setter = setter;
         _fieldClass = field.getType();
         _isCollection = Map.class.equals(_fieldClass) || SortedMap.class.equals(_fieldClass) || List.class.equals(_fieldClass);
-        
-        if(hashIndexed && rangeIndexed)
-            throw new IllegalArgumentException(field.getName() + ": cannot be both hash and range indexed, select one or the other.");
-        
-        if((hashIndexed || rangeIndexed) && _isCollection)
-            throw new IllegalArgumentException(field.getName() + ": collection properties may not be indexed");
         
         Set<Annotation> annos = new TreeSet<Annotation>(
                 new Comparator<Annotation>()
@@ -216,15 +204,4 @@ public class PropertyMetadata implements Comparable<PropertyMetadata>
         
         return b.toString();
     }
-
-    public boolean isHashIndexed()
-    {
-        return _hashIndexed;
-    }
-
-    public boolean isRangeIndexed()
-    {
-        return _rangeIndexed;
-    }
-    
 }
