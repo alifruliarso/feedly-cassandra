@@ -208,7 +208,7 @@ public class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
     {
         List<Object> startPropVals = indexValues(startTemplate, index);
         List<Object> endPropVals;
-        List<? extends Object> indexPartitions;
+        List<List<Object>> indexPartitions;
         if(startTemplate == endTemplate)
         {
             endPropVals = startPropVals;
@@ -220,12 +220,14 @@ public class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
             indexPartitions = index.getIndexPartitioner().partitionRange(startPropVals, endPropVals);            
         }
         
+        _logger.trace("reading from partitions {}", indexPartitions);
         List<DynamicComposite> rowKeys = new ArrayList<DynamicComposite>();
-        for(Object partitionValue : indexPartitions)
+        for(List<Object> partition : indexPartitions)
         {
             DynamicComposite rowKey = new DynamicComposite();
             rowKey.add(index.id());
-            rowKey.add(partitionValue);
+            for(Object pval :partition)
+                rowKey.add(pval);
             rowKeys.add(rowKey);
         }
 

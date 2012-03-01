@@ -33,6 +33,10 @@
           <groupId>org.slf4j</groupId>
           <artifactId>slf4j-log4j12</artifactId>
         </exclusion>
+        <exclusion>
+          <artifactId>jetty</artifactId>
+          <groupId>org.mortbay.jetty</groupId>
+        </exclusion>
       </exclusions>
     </dependency>
     <dependency>
@@ -60,7 +64,7 @@
     <!-- <dependency> <groupId>cglib</groupId> <artifactId>cglib</artifactId> <version>2.2.2</version> </dependency> -->
     <dependency>
       <groupId>asm</groupId>
-      <artifactId>asm-commons</artifactId>
+      <artifactId>asm</artifactId>
       <version>3.3.1</version>
     </dependency>
     <dependency>
@@ -138,6 +142,23 @@
     </plugins>
     <pluginManagement>
       <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-jar-plugin</artifactId>
+          <version>2.2</version>
+          <executions>
+            <execution>
+              <configuration>
+                <includes>
+                  <include>com/feedly/cassandra/test/*</include>
+                </includes>
+              </configuration>
+              <goals>
+                <goal>test-jar</goal>
+              </goals>
+            </execution>
+          </executions>
+        </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-surefire-plugin</artifactId>

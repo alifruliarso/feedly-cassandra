@@ -197,11 +197,17 @@ public class PutHelper<K, V> extends BaseDaoHelper<K, V>
         
         HColumn<DynamicComposite, byte[]> column = HFactory.createColumn(colName, IDX_COL_VAL, clock, SER_COMPOSITE, SER_BYTES);
         
-        for(Object partitionVal : idxMeta.getIndexPartitioner().partitionValue(propVals))
-        {
-            DynamicComposite rowKey = new DynamicComposite(idxMeta.id(), partitionVal);
-            mutator.addInsertion(SER_COMPOSITE.toBytes(rowKey), _entityMeta.getIndexFamilyName(), column);
-        }
+        DynamicComposite rowKey = new DynamicComposite(idxMeta.id());
+        
+        List<List<Object>> allPartitions = idxMeta.getIndexPartitioner().partitionValue(propVals);
+        if(allPartitions.size() != 1)
+            throw new IllegalStateException("expected single partition but encountered " + allPartitions.size());
+            
+        _logger.trace("writing to partition {}", allPartitions.get(0));
+        for(Object partitionVal : allPartitions.get(0))
+            rowKey.add(partitionVal);
+        
+        mutator.addInsertion(SER_COMPOSITE.toBytes(rowKey), _entityMeta.getIndexFamilyName(), column);
     }
 
     private int saveMapFields(Object key, byte[] keyBytes, PropertyMetadata colMeta, V value, long clock, Mutator<byte[]> mutator)

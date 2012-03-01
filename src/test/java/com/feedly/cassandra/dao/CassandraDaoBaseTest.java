@@ -3,7 +3,6 @@ package com.feedly.cassandra.dao;
 import static org.junit.Assert.*;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
@@ -1629,7 +1628,8 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         
         assertEquals(idxBeans.subList(50, 60), actual);
         assertEquals(1, TestPartitioner.partitionHistory().size());
-        assertEquals(5, TestPartitioner.partitionHistory().get(0).get(0));
+        assertEquals(1, TestPartitioner.partitionHistory().get(0).get(0).size());
+        assertEquals(5L, TestPartitioner.partitionHistory().get(0).get(0).get(0));
         assertTrue(TestPartitioner.rangePartitionHistory().isEmpty());
         
         TestPartitioner.partitionHistory().clear();
@@ -1645,7 +1645,12 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         assertEquals(idxBeans.subList(50, 80), actual);
         assertTrue(TestPartitioner.partitionHistory().isEmpty());
         assertEquals(1, TestPartitioner.rangePartitionHistory().size());
-        assertEquals(Arrays.asList(new Long[] {5L,6L,7L}), TestPartitioner.rangePartitionHistory().get(0));
+        List<List<Object>> expectedRange = new ArrayList<List<Object>>();
+        expectedRange.add(Collections.<Object>singletonList(5L));
+        expectedRange.add(Collections.<Object>singletonList(6L));
+        expectedRange.add(Collections.<Object>singletonList(7L));
+        
+        assertEquals(expectedRange, TestPartitioner.rangePartitionHistory().get(0));
         
         TestPartitioner.partitionHistory().clear();
     }
