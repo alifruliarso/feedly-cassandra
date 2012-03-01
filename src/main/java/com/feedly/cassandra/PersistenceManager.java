@@ -62,7 +62,7 @@ public class PersistenceManager implements IKeyspaceFactory
     {
         _clusterName = cluster;
     }
-    public void setKeyspace(String keyspace)
+    public void setKeyspaceName(String keyspace)
     {
         _keyspace = keyspace;
     }

@@ -144,7 +144,8 @@ public class EntityMetadata<V>
                 
                 PropertyMetadata pm = new PropertyMetadata(f, col, getter, setter, serializerClass(anno.serializer()), _useCompositeColumns);
                 props.put(f.getName(), pm);
-                propsByPhysical.put(col, pm);
+                if(propsByPhysical.put(col, pm) != null)
+                    throw new IllegalStateException(f.getName() + ": physical column name must be unique - " + col);
 
                 if(anno.hashIndexed() || anno.rangeIndexed())
                 {

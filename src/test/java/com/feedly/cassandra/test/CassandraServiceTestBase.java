@@ -85,7 +85,7 @@ public class CassandraServiceTestBase
     public static void configurePersistenceManager(PersistenceManager pm)
     {
         pm.setClusterName(cluster.getName());
-        pm.setKeyspace(KEYSPACE);
+        pm.setKeyspaceName(KEYSPACE);
         pm.setHostConfiguration(new CassandraHostConfigurator("localhost:9160"));
     }
 
