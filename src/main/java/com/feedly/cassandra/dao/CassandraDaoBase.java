@@ -172,6 +172,8 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     @Override
     public V find(V template, FindOptions options)
     {
+        if(options == null)
+            options = new FindOptions();
         return _findHelper.find(template, options);
     }
 
