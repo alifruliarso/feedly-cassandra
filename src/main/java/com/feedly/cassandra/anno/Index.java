@@ -15,6 +15,5 @@ public @interface Index
 {
     String[] props();
     
-    @SuppressWarnings("rawtypes")
     Class<? extends IIndexRowPartitioner> partitioner() default SingleIndexRowPartitioner.class;
 }

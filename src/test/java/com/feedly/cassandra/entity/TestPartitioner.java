@@ -6,6 +6,9 @@ import java.util.List;
 
 import com.feedly.cassandra.IIndexRowPartitioner;
 
+/*
+ * partitions based on the first value of the index
+ */
 public class TestPartitioner implements IIndexRowPartitioner
 {
     private static List<List<List<Object>>> _audit = new ArrayList<List<List<Object>>>();

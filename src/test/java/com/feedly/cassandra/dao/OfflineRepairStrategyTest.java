@@ -53,7 +53,6 @@ public class OfflineRepairStrategyTest extends CassandraServiceTestBase
         _strategy.destroy();
     }
     
-    @SuppressWarnings("unchecked")
     @Test
     public void testRepair()
     {
@@ -65,7 +64,7 @@ public class OfflineRepairStrategyTest extends CassandraServiceTestBase
             idxBean.setRowKey(new Long(i));
             idxBean.setCharVal((char) ('a' + i));
             idxBean.setIntVal(i);
-            idxBean.setLongVal(i/2);
+            idxBean.setLongVal(i/2L);
             idxBean.setStrVal("strval");
             
             beans.add(idxBean);
@@ -74,14 +73,14 @@ public class OfflineRepairStrategyTest extends CassandraServiceTestBase
         _dao.mput(beans);
         
         for(IndexedBean bean : beans.subList(6, 12))
-            bean.setLongVal(-1);
+            bean.setLongVal(-1L);
 
         _dao.mput(beans);
 
         IndexedBean tmpl = new IndexedBean();
-        tmpl.setLongVal(0);
+        tmpl.setLongVal(0L);
         IndexedBean endtmpl = new IndexedBean();
-        endtmpl.setLongVal(100);
+        endtmpl.setLongVal(100L);
         
         //access incorrect values to trigger repair
         _dao.mfindBetween(tmpl, endtmpl);
@@ -111,7 +110,7 @@ public class OfflineRepairStrategyTest extends CassandraServiceTestBase
         assertEquals(numBeans, row.getColumnSlice().getColumns().size());
 
         //check all values are accessible
-        tmpl.setLongVal(-1);
+        tmpl.setLongVal(-1L);
         List<IndexedBean> actuals = new ArrayList<IndexedBean>(_dao.mfind(tmpl));
         Collections.sort(actuals);
         assertEquals(beans.subList(6, 12), actuals);
@@ -122,7 +121,7 @@ public class OfflineRepairStrategyTest extends CassandraServiceTestBase
                 continue;
             
             tmpl = new IndexedBean();
-            tmpl.setLongVal(i/2);
+            tmpl.setLongVal(i/2L);
             
             actuals = new ArrayList<IndexedBean>(_dao.mfind(tmpl));
             Collections.sort(actuals);

@@ -10,7 +10,7 @@ import com.feedly.cassandra.anno.RowKey;
 import com.feedly.cassandra.entity.EntityUtils;
 
 @ColumnFamily(name="indexedbean")
-@Indexes(@Index(props = {"strVal", "longVal"}))
+@Indexes({@Index(props = {"strVal", "longVal"}), @Index(props = {"strVal2", "longVal"})})
 public class IndexedBean implements Comparable<IndexedBean>
 {
     @RowKey
@@ -22,11 +22,17 @@ public class IndexedBean implements Comparable<IndexedBean>
     @Column(col="s", hashIndexed = true)
     private String strVal;
     
+    @Column(col="s2")
+    private String strVal2;
+    
     @Column(hashIndexed=true)
     private int intVal;
 
+    @Column
+    private int intVal2;
+
     @Column(rangeIndexed=true)
-    private long longVal;
+    private Long longVal;
     
     public Long getRowKey()
     {
@@ -58,16 +64,46 @@ public class IndexedBean implements Comparable<IndexedBean>
         this.intVal = intVal;
     }
 
-    public long getLongVal()
+    public Long getLongVal()
     {
         return longVal;
     }
 
-    public void setLongVal(long longVal)
+    public void setLongVal(Long longVal)
     {
         this.longVal = longVal;
     }
     
+    public Character getCharVal()
+    {
+        return charVal;
+    }
+
+    public void setCharVal(Character cVal)
+    {
+        this.charVal = cVal;
+    }
+
+    public int getIntVal2()
+    {
+        return intVal2;
+    }
+
+    public void setIntVal2(int intVal2)
+    {
+        this.intVal2 = intVal2;
+    }
+
+    public String getStrVal2()
+    {
+        return strVal2;
+    }
+
+    public void setStrVal2(String strVal2)
+    {
+        this.strVal2 = strVal2;
+    }
+
     @Override
     public String toString()
     {
@@ -100,16 +136,6 @@ public class IndexedBean implements Comparable<IndexedBean>
     public int compareTo(IndexedBean o)
     {
         return rowKey.compareTo(o.rowKey);
-    }
-
-    public Character getCharVal()
-    {
-        return charVal;
-    }
-
-    public void setCharVal(Character cVal)
-    {
-        this.charVal = cVal;
     }
 
 }

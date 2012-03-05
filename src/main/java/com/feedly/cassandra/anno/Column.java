@@ -51,6 +51,5 @@ public @interface Column
      */
     public boolean rangeIndexed() default false;
     
-    @SuppressWarnings("rawtypes")
     public Class<? extends IIndexRowPartitioner> rangeIndexPartitioner() default SingleIndexRowPartitioner.class;
 }

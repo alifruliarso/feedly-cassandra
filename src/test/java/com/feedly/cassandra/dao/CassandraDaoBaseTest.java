@@ -143,6 +143,17 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         assertEquals(message, expected, EntityUtils.getSerializer(expected.getClass()).fromBytes(value));
     }
     
+    private <T> void assertBeansEqual(List<T> expecteds, List<T> actuals)
+    {
+        for(int i = 0; i < Math.min(expecteds.size(), actuals.size()); i++)
+        {
+            assertEquals("position[" + i + "]", expecteds.get(i), actuals.get(i));
+        }
+        
+        assertEquals("size", expecteds.size(), actuals.size());
+    }
+    
+    
     /*
      * begin test cases
      */
@@ -305,8 +316,9 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         bean.setRowkey(10L);
         
         bean.setListProp(new ArrayList<Object>());
-        bean.getListProp().add("strMapProp-val");
+        bean.getListProp().add("strListProp-val0");
         bean.getListProp().add(100L);
+        bean.getListProp().add("strListProp-val2");
         bean.setStrProp("strProp-val");
         bean.setStrProp1("strProp1-val");
         
@@ -321,22 +333,24 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         slice = query.execute().get();
         
         
-        assertEquals(4, slice.getColumns().size());
+        assertEquals(5, slice.getColumns().size());
         assertColumn(bean.getStrProp(), false, slice.getColumnByName(new DynamicComposite("strProp")));
         assertColumn(bean.getStrProp1(), false, slice.getColumnByName(new DynamicComposite("strProp1")));
         assertColumn(bean.getListProp().get(0), true, slice.getColumnByName(new DynamicComposite("listProp", 0)));
         assertColumn(bean.getListProp().get(1), true, slice.getColumnByName(new DynamicComposite("listProp", 1)));
+        assertColumn(bean.getListProp().get(2), true, slice.getColumnByName(new DynamicComposite("listProp", 2)));
         
         //null out a value and resave
-        bean.getListProp().set(0, null);
+        bean.getListProp().set(1, null);
         _listDao.put(bean);
         
         slice = query.execute().get();
         
-        assertEquals(3, slice.getColumns().size());
+        assertEquals(4, slice.getColumns().size());
         assertColumn(bean.getStrProp(), false, slice.getColumnByName(new DynamicComposite("strProp")));
         assertColumn(bean.getStrProp1(), false, slice.getColumnByName(new DynamicComposite("strProp1")));
-        assertColumn(bean.getListProp().get(1), true, slice.getColumnByName(new DynamicComposite("listProp", 0)));
+        assertColumn(bean.getListProp().get(0), true, slice.getColumnByName(new DynamicComposite("listProp", 0)));
+        assertColumn(bean.getListProp().get(2), true, slice.getColumnByName(new DynamicComposite("listProp", 1)));
     }
 
     
@@ -491,7 +505,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         {
             assertTrue(((IEnhancedEntity) bean).getModifiedFields().isEmpty());
         }
-        assertEquals(beans, loaded);
+        assertBeansEqual(beans, loaded);
 
         MapBean bean0 = beans.get(0);
         //test null update
@@ -548,7 +562,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         {
             assertTrue(((IEnhancedEntity) bean).getModifiedFields().isEmpty());
         }
-        assertEquals(beans, loaded);
+        assertBeansEqual(beans, loaded);
 
         
         SortedMapBean bean0 = beans.get(0);
@@ -605,7 +619,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         {
             assertTrue(((IEnhancedEntity) bean).getModifiedFields().isEmpty());
         }
-        assertEquals(beans, loaded);
+        assertBeansEqual(beans, loaded);
 
         
         ListBean bean0 = beans.get(0);
@@ -662,7 +676,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             
             expected.setBoolVal(false); //false is default value for boolean
             expected.setUnmapped(null); //can't efficiently do exclusions and include unmapped columns right now as c* ranges are inclusive
-            SampleBean actual = _dao.get(saved.getRowKey(), null, null, Collections.singleton("boolVal"));
+            SampleBean actual = _dao.get(saved.getRowKey(), null, new GetOptions(null, Collections.singleton("boolVal")));
             
             assertEquals(expected, actual);
             
@@ -678,11 +692,11 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             Set<String> props = new HashSet<String>(unmapped.keySet());
             props.add("charVal");
             
-            actual = _dao.get(saved.getRowKey(), null, props, null);
+            actual = _dao.get(saved.getRowKey(), null, new GetOptions(props, null));
             assertEquals(expected, actual);
             
             expected.setIntVal(saved.getIntVal());
-            _dao.get(saved.getRowKey(), actual, Collections.singleton("intVal"), null); //update the bean
+            _dao.get(saved.getRowKey(), actual, new GetOptions(Collections.singleton("intVal"), null)); //update the bean
             
             assertEquals(expected, actual);
         }
@@ -718,7 +732,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         }
         
         _dao.mput(beans);
-        List<SampleBean> bulkActuals = _dao.mget(keys, null, "c", "cv");
+        List<SampleBean> bulkActuals = _dao.mget(keys, null, new GetOptions("c", "cv"));
         List<SampleBean> actuals = new ArrayList<SampleBean>();
         List<SampleBean> expecteds = new ArrayList<SampleBean>();
         Collections.sort(bulkActuals);
@@ -731,7 +745,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             expected.setRowKey(saved.getRowKey());
             expected.setCharVal(saved.getCharVal());
             expected.setUnmapped(null); //when using exclude, unmapped properties are ignored
-            actuals.add(_dao.get(saved.getRowKey(), null, "c", "cv"));
+            actuals.add(_dao.get(saved.getRowKey(), null, new GetOptions("c", "cv")));
             
             assertEquals(expected, actuals.get(i));
             assertEquals(expected, bulkActuals.get(i));
@@ -739,19 +753,19 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             expecteds.add(expected);
         }
 
-        bulkActuals = _dao.mget(keys, bulkActuals, "d", "daa");
+        bulkActuals = _dao.mget(keys, bulkActuals, new GetOptions("d", "daa"));
         for(int i = 0; i < beans.size(); i++)
         {
             SampleBean saved = beans.get(i);
             SampleBean expected = expecteds.get(i);
             
-            actuals.set(i, _dao.get(saved.getRowKey(), actuals.get(i), "d", "daa"));//includes double's physical name
+            actuals.set(i, _dao.get(saved.getRowKey(), actuals.get(i), new GetOptions("d", "daa")));//includes double's physical name
             expected.setDoubleVal(saved.getDoubleVal());
             assertEquals(expected, actuals.get(i));
             assertEquals(expected, bulkActuals.get(i));
         }
 
-        bulkActuals = _dao.mget(keys, bulkActuals, "unmapped-10", "unmapped-19");
+        bulkActuals = _dao.mget(keys, bulkActuals, new GetOptions("unmapped-10", "unmapped-19"));
 
         for(int i = 0; i < beans.size(); i++)
         {
@@ -762,123 +776,13 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             for(int j = 10; j < 20; j++)
                 expected.getUnmapped().put("unmapped-" + j, saved.getUnmapped().get("unmapped-" + j));
 
-            actuals.set(i, _dao.get(saved.getRowKey(), actuals.get(i), "unmapped-10", "unmapped-19"));
+            actuals.set(i, _dao.get(saved.getRowKey(), actuals.get(i), new GetOptions("unmapped-10", "unmapped-19")));
             assertEquals(expected, actuals.get(i));
             assertEquals(expected, bulkActuals.get(i));
         }
     }
     
 
-    @Test
-    public void testGetPartialCollection() throws Exception
-    {
-        int numBeans = 5;
-        List<MapBean> mapBeans = new ArrayList<MapBean>();
-        List<ListBean> listBeans = new ArrayList<ListBean>();
-        List<Long> keys = new ArrayList<Long>();
-        
-        for(int i = 0; i < numBeans; i++)
-        {
-            ListBean lbean = new ListBean();
-            lbean.setRowkey(new Long(i));
-            lbean.setStrProp("str-" + i);
-            lbean.setStrProp1("str1-" + i);
-            lbean.setListProp(new ArrayList<Object>());
-            for(int j = 0; j <= 200; j++)
-                lbean.getListProp().add(i*1000 + j);
-
-            MapBean mbean = new MapBean();
-            mbean.setRowkey(new Long(i));
-            mbean.setStrProp("str-" + i);
-            mbean.setStrProp1("str1-" + i);
-            mbean.setMapProp(new HashMap<String, Object>());
-            for(int j = 0; j <= 200; j++)
-                mbean.getMapProp().put("key-" + j, j);
-
-            mapBeans.add(mbean);
-            listBeans.add(lbean);
-            keys.add(lbean.getRowkey());
-        }
-
-        _listDao.mput(listBeans);
-        _mapDao.mput(mapBeans);
-
-        List<ListBean> bulkListActuals = _listDao.mget(keys, null, null, Collections.singleton("strProp1"));
-        assertEquals(numBeans, bulkListActuals.size());
-        Collections.sort(bulkListActuals);
-
-        for(int i = 0; i < listBeans.size(); i++)
-        {
-            ListBean saved = listBeans.get(i);
-            ListBean expected = (ListBean) saved.clone();
-            
-            expected.setStrProp1(null); 
-            ListBean actual = _listDao.get(saved.getRowkey(), null, null, Collections.singleton("strProp1"));
-            
-            assertEquals(expected, actual);
-            assertEquals(expected, bulkListActuals.get(i));
-        }
-        
-        
-        bulkListActuals = _listDao.mget(keys, null, Collections.singleton(new CollectionProperty("listProp", 100)), null);
-        assertEquals(numBeans, bulkListActuals.size());
-        Collections.sort(bulkListActuals);
-        for(int i = 0; i < listBeans.size(); i++)
-        {
-            ListBean saved = listBeans.get(i);
-            /*
-             * load a single value from within a collection
-             */
-            ListBean actual = _listDao.get(saved.getRowkey(), null, Collections.singleton(new CollectionProperty("listProp", 100)), null);
-            
-            ListBean expected = new ListBean();
-            expected.setRowkey(saved.getRowkey());
-            expected.setListProp(new ArrayList<Object>());
-            for(int j = 0; j < 100; j++)
-                expected.getListProp().add(null);
-            
-            expected.getListProp().add(saved.getListProp().get(100));
-            assertEquals(expected, actual);
-            assertEquals(expected, bulkListActuals.get(i));
-        }
-        
-        List<MapBean> bulkMapActuals = _mapDao.mget(keys, null, null, Collections.singleton("strProp1"));
-        assertEquals(numBeans, bulkMapActuals.size());
-        Collections.sort(bulkMapActuals);
-        for(int i = 0; i < mapBeans.size(); i++)
-        {
-            MapBean saved = mapBeans.get(i);
-            MapBean expected = (MapBean) saved.clone();
-            
-            expected.setStrProp1(null); 
-            MapBean actual = _mapDao.get(saved.getRowkey(), null, null, Collections.singleton("strProp1"));
-            
-            assertEquals(expected, actual);
-            assertEquals(expected, bulkMapActuals.get(i));
-        }
-        
-        
-        Entry<String, Object> entry = (Entry<String, Object>) mapBeans.get(0).getMapProp().entrySet().iterator().next();
-        bulkMapActuals = _mapDao.mget(keys, null, Collections.singleton(new CollectionProperty("mapProp", entry.getKey())), null);
-        assertEquals(numBeans, bulkMapActuals.size());
-        Collections.sort(bulkMapActuals);
-        for(int i = 0; i < mapBeans.size(); i++)
-        {
-            MapBean saved = mapBeans.get(i);
-            /*
-             * load a single value from within a collection
-             */
-            MapBean actual = _mapDao.get(saved.getRowkey(), null, Collections.singleton(new CollectionProperty("mapProp", entry.getKey())), null);
-            
-            MapBean expected = new MapBean();
-            expected.setRowkey(saved.getRowkey());
-            expected.setMapProp(Collections.singletonMap(entry.getKey(), entry.getValue()));
-            
-            assertEquals(expected, actual);
-            assertEquals(expected, bulkMapActuals.get(i));
-        }
-    }
-    
     @Test
     public void testGetPartialCollectionRange() throws Exception
     {
@@ -918,7 +822,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
          * lists
          */
         //do the same test using bulk API
-        List<ListBean> bulkListActuals = _listDao.mget(keys, null, "strProp1", "strProp1");
+        List<ListBean> bulkListActuals = _listDao.mget(keys, null, new GetOptions("strProp1", "strProp1"));
         assertEquals(numBeans, bulkListActuals.size());
         Collections.sort(bulkListActuals);
         List<ListBean> singleListActuals = new ArrayList<ListBean>();
@@ -929,13 +833,13 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             expected.setRowkey(saved.getRowkey());
             expected.setStrProp1(saved.getStrProp1()); 
             
-            singleListActuals.add(_listDao.get(saved.getRowkey(), null, "strProp1", "strProp1"));
+            singleListActuals.add(_listDao.get(saved.getRowkey(), null, new GetOptions("strProp1", "strProp1")));
 
             assertEquals(expected, singleListActuals.get(i));
             assertEquals(expected, bulkListActuals.get(i));
         }
 
-        _listDao.mget(keys, bulkListActuals, new CollectionProperty("listProp", 25),  new CollectionProperty("listProp", 175));
+        _listDao.mget(keys, bulkListActuals, new GetOptions(new CollectionProperty("listProp", 25),  new CollectionProperty("listProp", 175)));
         assertEquals(numBeans, bulkListActuals.size());
 
         for(int i = 0; i < listBeans.size(); i++)
@@ -949,7 +853,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             for(int j = 0; j <= 175; j++)
                 expected.getListProp().add(j < 25 ? null : saved.getListProp().get(j));
 
-            _listDao.get(saved.getRowkey(), singleListActuals.get(i), new CollectionProperty("listProp", 25),  new CollectionProperty("listProp", 175));
+            _listDao.get(saved.getRowkey(), singleListActuals.get(i), new GetOptions(new CollectionProperty("listProp", 25),  new CollectionProperty("listProp", 175)));
             
             assertEquals(expected, singleListActuals.get(i));
             assertEquals(expected, bulkListActuals.get(i));
@@ -960,7 +864,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
          */
         
         //do the same test using bulk API
-        List<MapBean> bulkMapActuals = _mapDao.mget(keys, null, "strProp1", "strProp1");
+        List<MapBean> bulkMapActuals = _mapDao.mget(keys, null, new GetOptions("strProp1", "strProp1"));
         List<MapBean> mapActuals = new ArrayList<MapBean>();
         List<MapBean> expectedMaps = new ArrayList<MapBean>();
         
@@ -974,7 +878,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             expected.setRowkey(saved.getRowkey());
             expected.setStrProp1(saved.getStrProp1()); 
 
-            MapBean actual = _mapDao.get(saved.getRowkey(), null, "strProp1", "strProp1");
+            MapBean actual = _mapDao.get(saved.getRowkey(), null, new GetOptions("strProp1", "strProp1"));
             
             assertEquals(expected, actual);
             assertEquals(expected, bulkMapActuals.get(i));
@@ -988,13 +892,15 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
          * load a range from within a collection
          */
         String start = "key-100", end = "key-201";
-        bulkMapActuals = _mapDao.mget(keys, mapActuals, new CollectionProperty("mapProp", start), new CollectionProperty("mapProp", end));
+        bulkMapActuals = _mapDao.mget(keys, mapActuals, 
+                                      new GetOptions(new CollectionProperty("mapProp", start), new CollectionProperty("mapProp", end)));
         assertEquals(numBeans, bulkMapActuals.size());
         for(int i = 0; i < mapBeans.size(); i++)
         {
             MapBean saved = mapBeans.get(i);
             MapBean expected = expectedMaps.get(i);
-            mapActuals.set(i, _mapDao.get(saved.getRowkey(), mapActuals.get(i), new CollectionProperty("mapProp", start), new CollectionProperty("mapProp", end)));
+            mapActuals.set(i, _mapDao.get(saved.getRowkey(), mapActuals.get(i), 
+                                          new GetOptions(new CollectionProperty("mapProp", start), new CollectionProperty("mapProp", end))));
             
             expected.setRowkey(saved.getRowkey());
             expected.setMapProp(new HashMap<String, Object>());
@@ -1013,9 +919,9 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
     }
 
     @Test
-    public void testFind() throws Exception
+    public void testHashFind() throws Exception
     {
-        int numBeans = CassandraDaoBase.ROW_RANGE_SIZE+1;//force dao to do multiple ranges
+        int numBeans = 2*CassandraDaoBase.ROW_RANGE_SIZE+1;//force dao to do multiple ranges
         List<IndexedBean> idxBeans = new ArrayList<IndexedBean>();
         List<CompositeIndexedBean> cIdxBeans = new ArrayList<CompositeIndexedBean>();
         for(int i = 0; i < numBeans; i++)
@@ -1024,7 +930,8 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             idxBean.setRowKey(new Long(i));
             idxBean.setCharVal('a');
             idxBean.setIntVal(i/10);
-            idxBean.setLongVal(i/10);
+            idxBean.setIntVal2(i/2);
+            idxBean.setLongVal(i/10L);
             idxBean.setStrVal("strval");
             
             idxBeans.add(idxBean);
@@ -1042,21 +949,30 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         _indexedDao.mput(idxBeans);
         _compositeIndexedDao.mput(cIdxBeans);
         
+        List<IndexedBean> idxActuals;
         IndexedBean idxTmpl = new IndexedBean();
         idxTmpl.setIntVal(5);
-        List<IndexedBean> idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl));
-
+        idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl));
+        
         Collections.sort(idxActuals);
-        assertEquals(idxBeans.subList(50, 60), idxActuals);
+        assertBeansEqual(idxBeans.subList(50, 60), idxActuals);
         for(IndexedBean idxBean : idxActuals)
             assertTrue(((IEnhancedEntity) idxBean).getModifiedFields().isEmpty());
 
+        FindOptions options = new FindOptions();
+        options.setMaxRows(5); //ensure max rows honored
+        assertEquals(5, _indexedDao.mfind(idxTmpl, options).size());
+
+        options.setMaxRows(CassandraDaoBase.ROW_RANGE_SIZE*2); //ensure max rows honored
+        assertEquals(10, _indexedDao.mfind(idxTmpl, options).size());
+
+        
         CompositeIndexedBean cIdxTmpl = new CompositeIndexedBean();
         cIdxTmpl.setIntVal(5);
         List<CompositeIndexedBean> cIdxActuals = new ArrayList<CompositeIndexedBean>(_compositeIndexedDao.mfind(cIdxTmpl));
 
         Collections.sort(cIdxActuals);
-        assertEquals(cIdxBeans.subList(50, 60), cIdxActuals);
+        assertBeansEqual(cIdxBeans.subList(50, 60), cIdxActuals);
         for(CompositeIndexedBean cIdxBean : cIdxActuals)
             assertTrue(((IEnhancedEntity) cIdxBean).getModifiedFields().isEmpty());
 
@@ -1066,23 +982,60 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl));
 
         Collections.sort(idxActuals);
-        assertEquals(idxBeans, idxActuals);
+        assertBeansEqual(idxBeans, idxActuals);
         for(IndexedBean idxBean : idxActuals)
             assertTrue(((IEnhancedEntity) idxBean).getModifiedFields().isEmpty());
 
+        //now update a single bean so that the fetched range is exactly the batch size
+        IndexedBean upd = idxBeans.get(0);
+        upd.setStrVal("strval-updated");
+        _indexedDao.put(upd);
+        idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl));
+
+        Collections.sort(idxActuals);
+        assertBeansEqual(idxBeans.subList(1, numBeans), idxActuals);
+        
         
         cIdxTmpl = new CompositeIndexedBean();
         cIdxTmpl.setStrVal("strval");
         cIdxActuals = new ArrayList<CompositeIndexedBean>(_compositeIndexedDao.mfind(cIdxTmpl));
         
         Collections.sort(cIdxActuals);
-        assertEquals(cIdxBeans, cIdxActuals);
+        assertBeansEqual(cIdxBeans, cIdxActuals);
         for(CompositeIndexedBean cIdxBean : cIdxActuals)
             assertTrue(((IEnhancedEntity) cIdxBean).getModifiedFields().isEmpty());
+
+        
+        /*
+         * test non-indexed property filtering
+         */
+        idxTmpl = new IndexedBean();
+        idxTmpl.setIntVal(5);
+        idxTmpl.setIntVal2(27);
+        idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl));
+        
+        Collections.sort(idxActuals);
+        assertBeansEqual(idxBeans.subList(54, 56), idxActuals);
+        
+        for(int i = 0; i < numBeans; i++)
+        {
+            IndexedBean idxBean = idxBeans.get(i);
+            idxBean.setIntVal(0);
+            idxBean.setIntVal2(i == 140 ? 1 : 0);
+            idxBeans.add(idxBean);
+        }
+        _indexedDao.mput(idxBeans);
+        idxTmpl.setIntVal(0);
+        idxTmpl.setIntVal2(0);
+        List<IndexedBean> expecteds = new ArrayList<IndexedBean>(idxBeans.subList(0, 140));
+        expecteds.addAll(idxBeans.subList(141, numBeans));
+        idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl));
+        Collections.sort(idxActuals);
+        assertBeansEqual(expecteds, idxActuals);
     }
     
     @Test
-    public void testFindPartialRange() throws Exception
+    public void testHashFindPartialColRange() throws Exception
     {
         int numBeans = CassandraDaoBase.ROW_RANGE_SIZE+1;//force dao to do multiple ranges
         List<IndexedBean> idxBeans = new ArrayList<IndexedBean>();
@@ -1093,7 +1046,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             idxBean.setRowKey(new Long(i));
             idxBean.setCharVal('c');
             idxBean.setIntVal(i/10);
-            idxBean.setLongVal(i);
+            idxBean.setLongVal((long) i);
             idxBean.setStrVal("strval");
             
             idxBeans.add(idxBean);
@@ -1113,7 +1066,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         
         IndexedBean idxTmpl = new IndexedBean();
         idxTmpl.setIntVal(5);
-        List<IndexedBean> idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl, "longVal", "t"));
+        List<IndexedBean> idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl, new FindOptions("longVal", "t")));
         List<IndexedBean> idxExpecteds = new ArrayList<IndexedBean>();
 
         Collections.sort(idxActuals);
@@ -1127,13 +1080,13 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             idxExpecteds.add(idxBean);
         }
         
-        assertEquals(idxExpecteds, idxActuals);
+        assertBeansEqual(idxExpecteds, idxActuals);
         for(IndexedBean idxBean : idxActuals)
             assertTrue(((IEnhancedEntity) idxBean).getModifiedFields().isEmpty());
 
         CompositeIndexedBean cIdxTmpl = new CompositeIndexedBean();
         cIdxTmpl.setIntVal(5);
-        List<CompositeIndexedBean> cIdxActuals = new ArrayList<CompositeIndexedBean>(_compositeIndexedDao.mfind(cIdxTmpl, "longVal", "t"));
+        List<CompositeIndexedBean> cIdxActuals = new ArrayList<CompositeIndexedBean>(_compositeIndexedDao.mfind(cIdxTmpl, new FindOptions("longVal", "t")));
         List<CompositeIndexedBean> cIdxExpecteds = new ArrayList<CompositeIndexedBean>();
 
         for(int i = 50; i < 60; i++)
@@ -1147,7 +1100,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         }
         
         Collections.sort(cIdxActuals);
-        assertEquals(cIdxExpecteds, cIdxActuals);
+        assertBeansEqual(cIdxExpecteds, cIdxActuals);
         for(CompositeIndexedBean cIdxBean : cIdxActuals)
             assertTrue(((IEnhancedEntity) cIdxBean).getModifiedFields().isEmpty());
         
@@ -1174,8 +1127,14 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
 
         ListBean lTmpl = new ListBean();
         lTmpl.setStrProp("s5");
+        
+        
+        /*
+         * partial list
+         */
         int startIdx = 4, endIdx = 15;
-        List<ListBean> listActuals = new ArrayList<ListBean>( _listDao.mfind(lTmpl, new CollectionProperty("listProp", startIdx), new CollectionProperty("listProp", endIdx)) );
+        FindOptions options = new FindOptions(new CollectionProperty("listProp", startIdx), new CollectionProperty("listProp", endIdx));
+        List<ListBean> listActuals = new ArrayList<ListBean>( _listDao.mfind(lTmpl, options) );
         Collections.sort(listActuals);
         assertEquals(10, listActuals.size());
         
@@ -1190,10 +1149,49 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             expected.setListProp(expectedColl);
             assertEquals(expected, listActuals.get(i-50));
         }
+
+        /*
+         * full list
+         */
+        options = new FindOptions(Collections.singleton("listProp"), null);
+        listActuals = new ArrayList<ListBean>( _listDao.mfind(lTmpl, options) );
+        Collections.sort(listActuals);
+        assertEquals(10, listActuals.size());
+        for(int i = 0; i < 10; i++)
+        {
+            ListBean expected = new ListBean();
+            expected.setRowkey(listBeans.get(50+i).getRowkey());
+            expected.setListProp(listBeans.get(50+i).getListProp());
+            assertEquals(expected, listActuals.get(i));
+        }
+
+        //delete a list value. key remains in the DB, ensure no value is returned...
+        ListBean lb = listBeans.get(55);
+        int cnt = lb.getListProp().size();
+        lb.setListProp(new ArrayList<Object>());
+        for(int i = 0; i < cnt; i++)
+            lb.getListProp().add(null);
+        
+        _listDao.put(lb);
+
+        listActuals = new ArrayList<ListBean>( _listDao.mfind(lTmpl, options) );
+        Collections.sort(listActuals);
+        assertEquals(9, listActuals.size());
+        for(int i = 0; i < 10; i++)
+        {
+            if(i == 5)
+                continue; //deleted value
+            
+            ListBean expected = new ListBean();
+            expected.setRowkey(listBeans.get(50+i).getRowkey());
+            expected.setListProp(listBeans.get(50+i).getListProp());
+            assertEquals(expected, listActuals.get(i < 5 ? i : i - 1));
+        }
+
     }
     
     @Test
-    public void testFindPartial() throws Exception
+    public void testHashFindPartial() throws Exception
     {
         int numBeans = CassandraDaoBase.ROW_RANGE_SIZE+1;//force dao to do multiple ranges
         List<IndexedBean> idxBeans = new ArrayList<IndexedBean>();
@@ -1204,7 +1202,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             idxBean.setRowKey(new Long(i));
             idxBean.setCharVal('c');
             idxBean.setIntVal(i/10);
-            idxBean.setLongVal(i);
+            idxBean.setLongVal((long) i);
             idxBean.setStrVal("strval");
             
             idxBeans.add(idxBean);
@@ -1224,7 +1222,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         
         IndexedBean idxTmpl = new IndexedBean();
         idxTmpl.setIntVal(5);
-        List<IndexedBean> idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl, Collections.singleton("longVal"), null));
+        List<IndexedBean> idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl, new FindOptions(Collections.singleton("longVal"), null)));
         List<IndexedBean> idxExpecteds = new ArrayList<IndexedBean>();
         
         Collections.sort(idxActuals);
@@ -1237,13 +1235,14 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             idxExpecteds.add(idxBean);
         }
         
-        assertEquals(idxExpecteds, idxActuals);
+        assertBeansEqual(idxExpecteds, idxActuals);
         for(IndexedBean idxBean : idxActuals)
             assertTrue(((IEnhancedEntity) idxBean).getModifiedFields().isEmpty());
         
         CompositeIndexedBean cIdxTmpl = new CompositeIndexedBean();
         cIdxTmpl.setIntVal(5);
-        List<CompositeIndexedBean> cIdxActuals = new ArrayList<CompositeIndexedBean>(_compositeIndexedDao.mfind(cIdxTmpl, null, Collections.singleton("intVal")));
+        FindOptions options = new FindOptions(null, Collections.singleton("intVal"));
+        List<CompositeIndexedBean> cIdxActuals = new ArrayList<CompositeIndexedBean>(_compositeIndexedDao.mfind(cIdxTmpl, options));
         List<CompositeIndexedBean> cIdxExpecteds = new ArrayList<CompositeIndexedBean>();
         
         for(int i = 50; i < 60; i++)
@@ -1258,7 +1257,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         }
         
         Collections.sort(cIdxActuals);
-        assertEquals(cIdxExpecteds, cIdxActuals);
+        assertBeansEqual(cIdxExpecteds, cIdxActuals);
         for(CompositeIndexedBean cIdxBean : cIdxActuals)
             assertTrue(((IEnhancedEntity) cIdxBean).getModifiedFields().isEmpty());
         
@@ -1290,7 +1289,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         for(int i = startIdx; i <= endIdx; i++)
             includes.add(new CollectionProperty("listProp", i));
         
-        List<ListBean> listActuals = new ArrayList<ListBean>( _listDao.mfind(lTmpl, includes, null) );
+        List<ListBean> listActuals = new ArrayList<ListBean>( _listDao.mfind(lTmpl, new FindOptions(includes, null)) );
         Collections.sort(listActuals);
         assertEquals(10, listActuals.size());
         
@@ -1306,8 +1305,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             assertEquals(expected, listActuals.get(i-50));
         }
     }
-
-
+    
     @Test
     public void testRangeIndexFind() throws Exception
     {
@@ -1320,7 +1318,8 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             idxBean.setRowKey(new Long(i));
             idxBean.setCharVal('c');
             idxBean.setIntVal(i);
-            idxBean.setLongVal(i/10);
+            idxBean.setIntVal2(i);
+            idxBean.setLongVal(i/10L);
             idxBean.setStrVal("strval");
             
             idxBeans.add(idxBean);
@@ -1339,20 +1338,26 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         _compositeIndexedDao.mput(cIdxBeans);
         
         IndexedBean idxTmpl = new IndexedBean();
-        idxTmpl.setLongVal(5);
+        idxTmpl.setLongVal(5L);
         List<IndexedBean> idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl));
 
         Collections.sort(idxActuals);
-        assertEquals(idxBeans.subList(50, 60), idxActuals);
+        assertBeansEqual(idxBeans.subList(50, 60), idxActuals);
         for(IndexedBean idxBean : idxActuals)
             assertTrue(((IEnhancedEntity) idxBean).getModifiedFields().isEmpty());
 
+        idxTmpl = new IndexedBean();
+        idxTmpl.setLongVal(5L);
+        idxTmpl.setIntVal2(55); //add post fetch filter...
+        idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl));
+        assertBeansEqual(Collections.singletonList(idxBeans.get(55)), idxActuals);
+        
         CompositeIndexedBean cIdxTmpl = new CompositeIndexedBean();
         cIdxTmpl.setLongVal(5);
         List<CompositeIndexedBean> cIdxActuals = new ArrayList<CompositeIndexedBean>(_compositeIndexedDao.mfind(cIdxTmpl));
 
         Collections.sort(cIdxActuals);
-        assertEquals(cIdxBeans.subList(50, 60), cIdxActuals);
+        assertBeansEqual(cIdxBeans.subList(50, 60), cIdxActuals);
         for(CompositeIndexedBean cIdxBean : cIdxActuals)
             assertTrue(((IEnhancedEntity) cIdxBean).getModifiedFields().isEmpty());
 
@@ -1360,13 +1365,16 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         assertEquals(0, _indexedStrategy.records.size());
         assertEquals(0, _compositeStrategy.records.size());
         
+        int idx = 50;
         for(IndexedBean bean : idxBeans.subList(50, 55))
-            bean.setLongVal(-1);
+            bean.setLongVal(idx++ % 2 == 0 ? -1L : null);
         
         _indexedDao.mput(idxBeans.subList(50, 55));
+        idxTmpl = new IndexedBean();
+        idxTmpl.setLongVal(5L);
         idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl));
         Collections.sort(idxActuals);
-        assertEquals(idxBeans.subList(55, 60), idxActuals);
+        assertBeansEqual(idxBeans.subList(55, 60), idxActuals);
         assertEquals(1, _indexedStrategy.records.size());
         
         StaleIndexUpdateRecord record = _indexedStrategy.records.get(0);
@@ -1401,11 +1409,13 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
          * do a between find
          */
         IndexedBean endIdxTmpl = new IndexedBean();
-        endIdxTmpl.setLongVal(6);
+        endIdxTmpl.setLongVal(6L);
 
+        idxTmpl = new IndexedBean();
+        idxTmpl.setLongVal(5L);
         idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfindBetween(idxTmpl, endIdxTmpl));
         Collections.sort(idxActuals);
-        assertEquals(idxBeans.subList(55, 70), idxActuals);
+        assertBeansEqual(idxBeans.subList(55, 70), idxActuals);
      
         assertEquals(2, _indexedStrategy.records.size());
         
@@ -1418,13 +1428,26 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         
         assertEquals(expectedStaleRowKeys, actualStaleRowKeys);
         
+        idxTmpl = new IndexedBean();
+        idxTmpl.setLongVal(5L);
+        idxTmpl.setIntVal(58);
+        endIdxTmpl = new IndexedBean();
+        endIdxTmpl.setLongVal(6L);
+        endIdxTmpl.setIntVal(63);
+        idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfindBetween(idxTmpl, endIdxTmpl));
+        Collections.sort(idxActuals);
+        assertBeansEqual(idxBeans.subList(58, 64), idxActuals);
+        
         CompositeIndexedBean endCIdxTmpl = new CompositeIndexedBean();
         endCIdxTmpl.setLongVal(6);
         
         cIdxActuals = new ArrayList<CompositeIndexedBean>(_compositeIndexedDao.mfindBetween(cIdxTmpl, endCIdxTmpl));
         Collections.sort(cIdxActuals);
-        assertEquals(cIdxBeans.subList(50, 70), cIdxActuals);
+        assertBeansEqual(cIdxBeans.subList(50, 70), cIdxActuals);
     }
+      
+
+    
 
     @Test
     public void testRangeFindPartial() throws Exception
@@ -1437,7 +1460,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             idxBean.setRowKey(new Long(i));
             idxBean.setCharVal('c');
             idxBean.setIntVal(i);
-            idxBean.setLongVal(Math.min(i/CassandraDaoBase.COL_RANGE_SIZE, 2));
+            idxBean.setLongVal((long) Math.min(i/CassandraDaoBase.COL_RANGE_SIZE, 2));
             idxBean.setStrVal("strval");
 
             idxBeans.add(idxBean);
@@ -1447,8 +1470,8 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         _indexedDao.mput(idxBeans);
 
         IndexedBean idxTmpl = new IndexedBean();
-        idxTmpl.setLongVal(2);
-        List<IndexedBean> idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl, Collections.singleton("intVal"), null));
+        idxTmpl.setLongVal(2L);
+        List<IndexedBean> idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl, new FindOptions(Collections.singleton("intVal"), null)));
         List<IndexedBean> idxExpecteds = new ArrayList<IndexedBean>();
 
         Collections.sort(idxActuals);
@@ -1462,23 +1485,23 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             idxExpecteds.add(idxBean);
         }
 
-        assertEquals(idxExpecteds.subList(100, 201), idxActuals);
+        assertBeansEqual(idxExpecteds.subList(100, 201), idxActuals);
         for(IndexedBean idxBean : idxActuals)
             assertTrue(((IEnhancedEntity) idxBean).getModifiedFields().isEmpty());
         
         IndexedBean startIdxTmpl = new IndexedBean();
-        startIdxTmpl.setLongVal(1);
-        idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfindBetween(startIdxTmpl, idxTmpl, Collections.singleton("intVal"), null));
+        startIdxTmpl.setLongVal(1L);
+        idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfindBetween(startIdxTmpl, idxTmpl, new FindBetweenOptions(Collections.singleton("intVal"), null)));
         Collections.sort(idxActuals);
 
-        assertEquals(idxExpecteds, idxActuals);
+        assertBeansEqual(idxExpecteds, idxActuals);
         for(IndexedBean idxBean : idxActuals)
             assertTrue(((IEnhancedEntity) idxBean).getModifiedFields().isEmpty());
 
     }
 
     @Test
-    public void testRangeFindPartialRange() throws Exception
+    public void testRangeFindPartialColRange() throws Exception
     {
         int numBeans = CassandraDaoBase.ROW_RANGE_SIZE;
         List<IndexedBean> idxBeans = new ArrayList<IndexedBean>();
@@ -1488,7 +1511,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             idxBean.setRowKey(new Long(i));
             idxBean.setCharVal('c');
             idxBean.setIntVal(i);
-            idxBean.setLongVal(i/10);
+            idxBean.setLongVal(i/10L);
             idxBean.setStrVal("strval");
 
             idxBeans.add(idxBean);
@@ -1497,8 +1520,8 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         _indexedDao.mput(idxBeans);
 
         IndexedBean idxTmpl = new IndexedBean();
-        idxTmpl.setLongVal(5);
-        List<IndexedBean> idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl, "intVal", "t"));
+        idxTmpl.setLongVal(5L);
+        List<IndexedBean> idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl, new FindOptions("intVal", "t")));
         List<IndexedBean> idxExpecteds = new ArrayList<IndexedBean>();
 
         Collections.sort(idxActuals);
@@ -1513,15 +1536,15 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             idxExpecteds.add(idxBean);
         }
 
-        assertEquals(idxExpecteds.subList(0, 10), idxActuals);
+        assertBeansEqual(idxExpecteds.subList(0, 10), idxActuals);
         for(IndexedBean idxBean : idxActuals)
             assertTrue(((IEnhancedEntity) idxBean).getModifiedFields().isEmpty());
         
         IndexedBean endIdxTmpl = new IndexedBean();
-        endIdxTmpl.setLongVal(6);
-        idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfindBetween(idxTmpl, endIdxTmpl, "intVal", "t"));
+        endIdxTmpl.setLongVal(6L);
+        idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfindBetween(idxTmpl, endIdxTmpl, new FindBetweenOptions("intVal", "t")));
         Collections.sort(idxActuals);
-        assertEquals(idxExpecteds, idxActuals);
+        assertBeansEqual(idxExpecteds, idxActuals);
         for(IndexedBean idxBean : idxActuals)
             assertTrue(((IEnhancedEntity) idxBean).getModifiedFields().isEmpty());
     }
@@ -1537,24 +1560,33 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             idxBean.setRowKey(new Long(i));
             idxBean.setCharVal('c');
             idxBean.setIntVal(i);
-            idxBean.setLongVal((i%5)/2);
+            idxBean.setLongVal((i%5)/2L);
             idxBean.setStrVal("strval-" + i/5);
+            idxBean.setStrVal2("strval2-" + i/5);
             
             idxBeans.add(idxBean);
         }
         
         _indexedDao.mput(idxBeans);
         
+        List<IndexedBean> idxActuals;
         IndexedBean idxTmpl = new IndexedBean();
-        idxTmpl.setStrVal("strval-1");
-        idxTmpl.setLongVal(1);
-        List<IndexedBean> idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl));
+        idxTmpl.setStrVal2("strval2-1");
+        idxTmpl.setLongVal(1L);
+        idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl));
 
         Collections.sort(idxActuals);
-        assertEquals(idxBeans.subList(7, 9), idxActuals);
+        assertBeansEqual(idxBeans.subList(7, 9), idxActuals);
         for(IndexedBean idxBean : idxActuals)
             assertTrue(((IEnhancedEntity) idxBean).getModifiedFields().isEmpty());
-        
+
+        //try a leading index match
+        idxTmpl = new IndexedBean();
+        idxTmpl.setStrVal2("strval2-1");
+        idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl));
+        Collections.sort(idxActuals);
+        assertBeansEqual(idxBeans.subList(5, 10), idxActuals);
+
         IndexedBean startTmpl = new IndexedBean(), endTmpl = new IndexedBean();
         startTmpl.setStrVal("strval-1");
         endTmpl.setStrVal("strval-2");
@@ -1562,7 +1594,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfindBetween(startTmpl, endTmpl));
 
         Collections.sort(idxActuals);
-        assertEquals(idxBeans.subList(5, 14), idxActuals);
+        assertBeansEqual(idxBeans.subList(5, 14), idxActuals);
         for(IndexedBean idxBean : idxActuals)
             assertTrue(((IEnhancedEntity) idxBean).getModifiedFields().isEmpty());
         
@@ -1571,9 +1603,18 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfindBetween(startTmpl, endTmpl));
 
         Collections.sort(idxActuals);
-        assertEquals(idxBeans.subList(9, 14), idxActuals);
+        assertBeansEqual(idxBeans.subList(9, 14), idxActuals);
         for(IndexedBean idxBean : idxActuals)
             assertTrue(((IEnhancedEntity) idxBean).getModifiedFields().isEmpty());
+        
+        //try a leading index match
+        startTmpl = new IndexedBean();
+        endTmpl = new IndexedBean();
+        startTmpl.setStrVal2("strval2-1");
+        endTmpl.setStrVal2("strval2-3");
+        idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfindBetween(startTmpl, endTmpl));
+        Collections.sort(idxActuals);
+        assertBeansEqual(idxBeans.subList(5, 20), idxActuals);
     }
     
     @Test
@@ -1626,13 +1667,14 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         List<PartitionedIndexBean> actual = new ArrayList<PartitionedIndexBean>(dao.mfind(tmpl));
         Collections.sort(actual);
         
-        assertEquals(idxBeans.subList(50, 60), actual);
+        assertBeansEqual(idxBeans.subList(50, 60), actual);
         assertEquals(1, TestPartitioner.partitionHistory().size());
         assertEquals(1, TestPartitioner.partitionHistory().get(0).get(0).size());
         assertEquals(5L, TestPartitioner.partitionHistory().get(0).get(0).get(0));
         assertTrue(TestPartitioner.rangePartitionHistory().isEmpty());
         
         TestPartitioner.partitionHistory().clear();
+        
         
         /*
          * range between find
@@ -1642,7 +1684,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         actual = new ArrayList<PartitionedIndexBean>(dao.mfindBetween(tmpl, endTmpl));
         Collections.sort(actual);
         
-        assertEquals(idxBeans.subList(50, 80), actual);
+        assertBeansEqual(idxBeans.subList(50, 80), actual);
         assertTrue(TestPartitioner.partitionHistory().isEmpty());
         assertEquals(1, TestPartitioner.rangePartitionHistory().size());
         List<List<Object>> expectedRange = new ArrayList<List<Object>>();
@@ -1650,10 +1692,232 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         expectedRange.add(Collections.<Object>singletonList(6L));
         expectedRange.add(Collections.<Object>singletonList(7L));
         
-        assertEquals(expectedRange, TestPartitioner.rangePartitionHistory().get(0));
+        assertBeansEqual(expectedRange, TestPartitioner.rangePartitionHistory().get(0));
         
         TestPartitioner.partitionHistory().clear();
     }
+
+    
+    private void testRangeFind(PartitionIndexBeanDao dao, 
+                               List<PartitionedIndexBean> beans, 
+                               PartitionedIndexBean template, 
+                               int batchSize,
+                               Integer maxRows)
+    {
+        dao.mput(beans.subList(0, batchSize));
+        FindOptions options = new FindOptions();
+        if(maxRows != null)
+            options.setMaxRows(maxRows);
+        
+        List<PartitionedIndexBean> actuals = new ArrayList<PartitionedIndexBean>(dao.mfind(template, options));
+
+        if(maxRows == null)
+        {
+            Collections.sort(actuals);
+            List<PartitionedIndexBean> expected = beans.subList(0, maxRows != null ? maxRows : batchSize); 
+            assertBeansEqual(expected, actuals);
+        }
+        else
+        {
+            //can't guarantee what rows will com back, ensure the full amount came back and each row is unique
+            assertEquals(maxRows, actuals.size());
+            
+            Set<Integer> indexes = new HashSet<Integer>();
+            for(PartitionedIndexBean bean : actuals)
+            {
+                boolean found = false;
+                for(int i = beans.size() - 1; i >= 0; i--)
+                {
+                    if(bean.equals(beans.get(i)))
+                    {
+                        found = true;
+                        assertTrue(bean.toString(), indexes.add(i));
+                    }
+                    
+                }
+                
+                assertTrue(bean.toString(), found);
+            }
+        }
+    }
+
+    private void testRangeFindBetween(PartitionIndexBeanDao dao, List<PartitionedIndexBean> idxBeans, long startVal, long endVal, EFindOrder order, int maxRows)
+    {
+        FindBetweenOptions options = new FindBetweenOptions();
+        options.setMaxRows(maxRows);
+        options.setRowOrder(order);
+        
+        PartitionedIndexBean startTmpl = new PartitionedIndexBean();
+        PartitionedIndexBean endTmpl = new PartitionedIndexBean();
+
+        startTmpl.setPartitionedValue(startVal);
+        endTmpl.setPartitionedValue(endVal);
+        
+        ArrayList<PartitionedIndexBean> actuals = new ArrayList<PartitionedIndexBean>(dao.mfindBetween(startTmpl, endTmpl, options));
+        Set<Long> ids = new HashSet<Long>();
+
+        
+        if(order == EFindOrder.ASCENDING)
+        {
+            for(int i = 0; i < actuals.size(); i++)
+            {
+                long idxVal = startVal + i/10;
+                PartitionedIndexBean actual = actuals.get(i);
+                long key = actual.getRowKey();
+                long pval = actual.getPartitionedValue();
+                assertTrue("duplicate rowKey" + key, ids.add(key));
+                assertEquals("key " + key, pval, key/10);
+                assertEquals("val " + pval, idxVal, pval);
+            }
+        }
+        else if(order == EFindOrder.DESCENDING)
+        {
+            for(int i = actuals.size() - 1; i >= 0; i--)
+            {
+                long idxVal = endVal - i/10;
+                PartitionedIndexBean actual = actuals.get(i);
+                long key = actual.getRowKey();
+                long pval = actual.getPartitionedValue();
+                assertTrue("duplicate rowKey" + key, ids.add(key));
+                assertEquals("key " + key, pval, key/10);
+                assertEquals("val " + pval, idxVal, pval);
+            }
+        }
+    }
+    
+    @Test
+    public void testRangeIndexFindIteration() throws Exception
+    {
+        PartitionIndexBeanDao dao = new PartitionIndexBeanDao();
+        dao.setKeyspaceFactory(_pm);
+        dao.init();
+
+        int numBeans = 3*CassandraDaoBase.ROW_RANGE_SIZE + 1;
+        List<PartitionedIndexBean> idxBeans = new ArrayList<PartitionedIndexBean>();
+        for(long i = 0; i < numBeans; i++)
+        {
+            PartitionedIndexBean idxBean = new PartitionedIndexBean();
+            idxBean.setRowKey(i);
+            idxBean.setPartitionedValue(0L);
+            
+            idxBeans.add(idxBean);
+        }
+        
+        PartitionedIndexBean idxTmpl = new PartitionedIndexBean();
+        idxTmpl.setPartitionedValue(0L);
+
+        /*
+         * test partial initial batch
+         */
+        testRangeFind(dao, idxBeans, idxTmpl, CassandraDaoBase.ROW_RANGE_SIZE/2, null);
+
+        /*
+         * test complete initial batch
+         */
+        testRangeFind(dao, idxBeans, idxTmpl, CassandraDaoBase.ROW_RANGE_SIZE, null);
+
+        //test max rows
+        testRangeFind(dao, idxBeans, idxTmpl, CassandraDaoBase.ROW_RANGE_SIZE, CassandraDaoBase.ROW_RANGE_SIZE/2);
+        
+        /*
+         * test complete subseqent batch
+         */
+        testRangeFind(dao, idxBeans, idxTmpl, 2*CassandraDaoBase.ROW_RANGE_SIZE, null);
+
+        //test max rows
+        testRangeFind(dao, idxBeans, idxTmpl, CassandraDaoBase.ROW_RANGE_SIZE, (int) (CassandraDaoBase.ROW_RANGE_SIZE*1.5));
+
+        /*
+         * partial last batch
+         */
+        testRangeFind(dao, idxBeans, idxTmpl, numBeans, null);
+
+        /*
+         * no rows
+         */
+        idxTmpl.setPartitionedValue(11L);
+        assertTrue(dao.mfind(idxTmpl).isEmpty());
+        
+        /*
+         * find between tests
+         */
+        for(long i = 0; i < numBeans; i++)
+        {
+            idxBeans.get((int) i).setPartitionedValue(i/10);
+        }
+        dao.mput(idxBeans);
+        
+
+        testRangeFindBetween(dao, idxBeans, 0, 5, EFindOrder.NONE, CassandraDaoBase.ROW_RANGE_SIZE);
+        testRangeFindBetween(dao, idxBeans, 0, 5, EFindOrder.ASCENDING, 30);
+        testRangeFindBetween(dao, idxBeans, 0, 5, EFindOrder.DESCENDING, 30);
+
+        testRangeFindBetween(dao, idxBeans, 0, 10, EFindOrder.ASCENDING, 100);
+        testRangeFindBetween(dao, idxBeans, 0, 10, EFindOrder.DESCENDING, 100);
+        testRangeFindBetween(dao, idxBeans, 0, 15, EFindOrder.ASCENDING, 150);
+        testRangeFindBetween(dao, idxBeans, 0, 15, EFindOrder.DESCENDING, 150);
+        testRangeFindBetween(dao, idxBeans, 0, 20, EFindOrder.ASCENDING, 200);
+        testRangeFindBetween(dao, idxBeans, 0, 20, EFindOrder.DESCENDING, 200);
+
+        testRangeFindBetween(dao, idxBeans, 0, 21, EFindOrder.ASCENDING, 201);
+        testRangeFindBetween(dao, idxBeans, 0, 21, EFindOrder.DESCENDING, 201);
+
+        testRangeFindBetween(dao, idxBeans, 0, 21, EFindOrder.ASCENDING, 101);
+        testRangeFindBetween(dao, idxBeans, 0, 21, EFindOrder.DESCENDING, 101);
+
+        //test > 100 vals in a partition...
+        for(int i = 0; i < numBeans; i++)
+        {
+            PartitionedIndexBean idxBean = idxBeans.get(i);
+            idxBean.setPartitionedValue(i/300L);
+        }
+
+        dao.mput(idxBeans);
+        
+        idxTmpl.setPartitionedValue(0L);
+        Collection<PartitionedIndexBean> actuals = dao.mfind(idxTmpl);
+        Set<Long> keys = new HashSet<Long>();
+        for(PartitionedIndexBean actual : actuals)
+        {
+            long key = actual.getRowKey();
+            assertTrue(keys.add(key));
+            assertTrue(key >= 0);
+            assertTrue(key < 300);
+            assertEquals(0, actual.getPartitionedValue());
+        }
+        assertEquals(300, actuals.size());
+
+        for(int i = 0; i < numBeans; i++)
+        {
+            PartitionedIndexBean idxBean = idxBeans.get(i);
+            idxBean.setPartitionedValue(i/150L);
+        }
+        
+        dao.mput(idxBeans);
+        
+        PartitionedIndexBean startTmpl = new PartitionedIndexBean();
+        startTmpl.setPartitionedValue(0L);
+        idxTmpl.setPartitionedValue(1L);
+        FindBetweenOptions options = new FindBetweenOptions();
+        options.setMaxRows(280);
+        options.setRowOrder(EFindOrder.ASCENDING);
+        
+        actuals = dao.mfindBetween(startTmpl, idxTmpl, options);
+        keys.clear();
+        int idx = 0;
+        for(PartitionedIndexBean actual : actuals)
+        {
+            long key = actual.getRowKey();
+            assertTrue(keys.add(key));
+            assertTrue(key >= 0);
+            assertTrue(key < 300);
+            assertEquals(idx/150, actual.getPartitionedValue());
+            idx++;
+        }
+        
+        assertEquals(280, actuals.size());
+    }  
+    
     
     private class RecordingStrategy implements IStaleIndexValueStrategy 
     {
@@ -1671,6 +1935,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         }
     }
 
+    @SuppressWarnings("unused")
     private class StaleIndexUpdateRecord 
     {
         EntityMetadata<?> entityMetadata;

@@ -113,6 +113,8 @@ public class PutHelper<K, V> extends BaseDaoHelper<K, V>
             entity.setUnmappedFieldsModified(false);
         }
         
+        _logger.info("inserted {} values into {}", values.size(), _entityMeta.getType().getSimpleName());
+
     }
 
     //rv[0] = total col cnt, rv[1] = range index update count
@@ -245,41 +247,32 @@ public class PutHelper<K, V> extends BaseDaoHelper<K, V>
             return 0;
         }
         
-        int newIdx = 0;
         int size = list.size();
         
-        
-        int nullIdx = list.indexOf(null); 
-        int startIdx = -1;
-        if(nullIdx >= 0)
+        int dbIdx = 0;
+
+        for(int i = 0; i < size; i++) 
         {
+            Object listVal = list.get(i);
+            if(listVal != null)
+            {
+                saveCollectionColumn(key, keyBytes, dbIdx, list.get(i), colMeta, clock, mutator);
+                dbIdx++;
+            }
+        }
+
+        if(dbIdx < size)
+        {
+            _logger.debug("{}[{}].{} list shortened. deleting last {} entries",
+                          new Object[]{_entityMeta.getFamilyName(), key, colMeta.getName(), size - dbIdx});
+            
             Mutator<byte[]> delMutator = HFactory.createMutator(_keyspaceFactory.createKeyspace(), SER_BYTES);
-            for(int i = nullIdx; i < size; i++)
+            for(int i = dbIdx; i < size; i++)
             {
                 saveCollectionColumn(key, keyBytes, i, null, colMeta, clock-1, delMutator);
-                if(startIdx < 0 && list.get(i) != null)
-                    startIdx = i;
-                    
             }
-            
-            
-            _logger.debug("{}[{}].{} list shortened need to re-index list. deleting {} entries (starting from first deleted entry)",
-                          new Object[]{_entityMeta.getFamilyName(), key, colMeta.getName(), size - nullIdx});
-            
-            
+
             delMutator.execute();
-        }
-        else
-            startIdx = 0;
-        
-        if(startIdx >= 0)
-        {
-            for(int i = startIdx; i < size; i++) 
-            {
-                boolean added = saveCollectionColumn(key, keyBytes, newIdx, list.get(i), colMeta, clock, mutator);
-                if(added)
-                    newIdx++;
-            }
         }
 
         return size;  

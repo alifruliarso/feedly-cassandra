@@ -2,7 +2,6 @@ package com.feedly.cassandra.dao;
 
 import java.util.Collection;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Manages object persistence in the Cassandra datastore. This object manages saving, loading (key lookup), and finding (secondary index 
@@ -19,29 +18,22 @@ public interface ICassandraDao<K, V>
     public void put(V value);
     public void mput(Collection<V> values);
 
-    //passing in a value updates and returns the value
-    public V get(K key, V value, Object start, Object end); //end is inclusive
-    public V get(K key, V value, Set<? extends Object> includes, Set<String> excludes);//passing excludes will omit unmapped properties
-
-    public List<V> mget(List<K> keys, List<V> values, Object start, Object end); //end is inclusive
-    public List<V> mget(List<K> keys, List<V> values, Set<? extends Object> includes, Set<String> excludes);
-    
-    
     public V get(K key);
-    public Collection<V> mget(Collection<K> keys);
+    //passing in a value updates and returns the value
+    public V get(K key, V value, GetOptions options); //end is inclusive
 
+    public Collection<V> mget(Collection<K> keys);
+    public List<V> mget(List<K> keys, List<V> values, GetOptions options); //end is inclusive
+    
     /*
      * convenience methods that must find at most 1 value
      */
     public V find(V template); 
-    public V find(V template, Object startColumn, Object endColumn); //end is inclusive
-    public V find(V template, Set<? extends Object> includes, Set<String> excludes);
+    public V find(V template, FindOptions options); 
     
     public Collection<V> mfind(V template);
-    public Collection<V> mfind(V template, Object startColumn, Object endColumn); //end is inclusive
-    public Collection<V> mfind(V template, Set<? extends Object> includes, Set<String> excludes);
+    public Collection<V> mfind(V template, FindOptions options); 
     
     public Collection<V> mfindBetween(V startTemplate, V endTemplate);
-    public Collection<V> mfindBetween(V startTemplate, V endTemplate, Object startColumn, Object endColumn); //end is inclusive
-    public Collection<V> mfindBetween(V startTemplate, V endTemplate, Set<? extends Object> includes, Set<String> excludes);
+    public Collection<V> mfindBetween(V startTemplate, V endTemplate, FindBetweenOptions options); 
 }

@@ -57,7 +57,7 @@ public class CassandraServiceTestBase
             
             if (started)
             {
-                cluster = HFactory.getOrCreateCluster("test-cluster", "localhost:9160");
+                cluster = HFactory.getOrCreateCluster("test-cluster", "localhost:8160");
                 KeyspaceDefinition keyspaceDefn = HFactory.createKeyspaceDefinition(KEYSPACE,
                                                                                     ThriftKsDef.DEF_STRATEGY_CLASS,
                                                                                     1,

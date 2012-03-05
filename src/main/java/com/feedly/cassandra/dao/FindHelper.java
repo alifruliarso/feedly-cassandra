@@ -1,9 +1,9 @@
 package com.feedly.cassandra.dao;
 
+import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Collection;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.List;
 
 import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.entity.EIndexType;
@@ -26,7 +26,7 @@ public class FindHelper<K, V> extends LoadHelper<K, V>
     
     private IndexMetadata chooseIndex(boolean rangeOnly, V... templates) 
     {
-        Set<PropertyMetadata> props = new HashSet<PropertyMetadata>();
+        List<PropertyMetadata> props = new ArrayList<PropertyMetadata>();
         BitSet dirty = asEntity(templates[0]).getModifiedFields();
         
         if(templates.length > 1)
@@ -52,7 +52,11 @@ public class FindHelper<K, V> extends LoadHelper<K, V>
                 continue;
             
             if(props.equals(im.getIndexedProperties()))
-                return im;
+            {
+                matching = im;
+                matchCnt = im.getIndexedProperties().size();
+                break;
+            }
 
             int cnt = 0;
             for(PropertyMetadata indexedProp : im.getIndexedProperties())
@@ -76,107 +80,53 @@ public class FindHelper<K, V> extends LoadHelper<K, V>
         }
         
         if(matching != null)
+        {
+            _logger.info("selected index {} [{} of {} col(s)]",  matching, matchCnt);
             return matching;
+        }
         
         throw new IllegalStateException("no applicable index for properties " + props);
     }
     
     
-    public V find(V template)
+    public V find(V template, FindOptions options)
     {
         IndexMetadata index = chooseIndex(false, template);
         if(index.getType() == EIndexType.HASH)
         {
-            return _hashIndexFinder.find(template, index);
+            return _hashIndexFinder.find(template, options, index);
         }
         else 
         {
-            return _rangeIndexFinder.find(template, index);
+            return _rangeIndexFinder.find(template, options, index);
         }
     }
     
-
-    public V find(V template, Object start, Object end)
+    public Collection<V> mfind(V template, FindOptions options)
     {
         IndexMetadata index = chooseIndex(false, template);
         if(index.getType() == EIndexType.HASH)
         {
-            return _hashIndexFinder.find(template, start, end, index);
-        }
-        
-        throw new IllegalStateException(); //never happens
-    }
-
-    public V find(V template, Set<? extends Object> includes, Set<String> excludes)
-    {
-        IndexMetadata index = chooseIndex(false, template);
-        if(index.getType() == EIndexType.HASH)
-        {
-            return _hashIndexFinder.find(template, includes, excludes, index);
-        }
-        
-        throw new IllegalStateException(); //never happens
-    }
-
-    public Collection<V> mfind(V template)
-    {
-        IndexMetadata index = chooseIndex(false, template);
-        if(index.getType() == EIndexType.HASH)
-        {
-            return _hashIndexFinder.mfind(template, index);
+            return _hashIndexFinder.mfind(template, options, index);
         }
         else 
         {
-            return _rangeIndexFinder.mfind(template, index);
+            return _rangeIndexFinder.mfind(template, options, index);
         }
     }
 
-
-    public Collection<V> mfind(V template, Object start, Object end)
-    {
-        IndexMetadata index = chooseIndex(false, template);
-        if(index.getType() == EIndexType.HASH)
-        {
-            return _hashIndexFinder.mfind(template, start, end, index);
-        }
-        else 
-        {
-            return _rangeIndexFinder.mfind(template, start, end, index);
-        }
-        
-    }
-    
-    public Collection<V> mfind(V template, Set<? extends Object> includes, Set<String> excludes)
-    {
-        IndexMetadata index = chooseIndex(false, template);
-        if(index.getType() == EIndexType.HASH)
-        {
-            return _hashIndexFinder.mfind(template, includes, excludes, index);
-        }
-        else
-        {
-            return _rangeIndexFinder.mfind(template, includes, excludes, index);
-        }
-    }
-    
     public Collection<V> mfindBetween(V startTemplate, V endTemplate)
     {
-        IndexMetadata index = chooseIndex(true, startTemplate, endTemplate);
-
-        return _rangeIndexFinder.mfindBetween(startTemplate, endTemplate, index);
+        return mfindBetween(startTemplate, endTemplate, null);
     }
 
-    public Collection<V> mfindBetween(V startTemplate, V endTemplate, Object startColumn, Object endColumn)
+    public Collection<V> mfindBetween(V startTemplate, V endTemplate, FindBetweenOptions options)
     {
+        if(options == null)
+            options = new FindBetweenOptions();
+        
         IndexMetadata index = chooseIndex(true, startTemplate, endTemplate);
 
-        return _rangeIndexFinder.mfindBetween(startTemplate, endTemplate, startColumn, endColumn, index);
-    }
-
-    public Collection<V> mfindBetween(V startTemplate, V endTemplate, Set<? extends Object> includes, Set<String> excludes)
-    {
-        IndexMetadata index = chooseIndex(true, startTemplate, endTemplate);
-
-        return _rangeIndexFinder.mfindBetween(startTemplate, endTemplate, includes, excludes, index);
+        return _rangeIndexFinder.mfindBetween(startTemplate, endTemplate, options, index);
     }
 }

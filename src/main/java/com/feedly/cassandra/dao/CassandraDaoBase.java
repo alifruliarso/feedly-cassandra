@@ -4,7 +4,6 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.Collection;
 import java.util.List;
-import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,7 +59,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
 
 
 
-        _logger.info(getClass().getSimpleName(), new Object[] {"[", _entityMeta.getFamilyName(), "] -> ", _entityMeta.toString()});
+        _logger.info("{} [{}]:\n{}", new Object[] {getClass().getSimpleName(), _entityMeta.getFamilyName(), _entityMeta.toString()});
     }
 
     public void setKeyspaceFactory(IKeyspaceFactory keyspaceFactory)
@@ -83,12 +82,10 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
             _staleIndexValueStrategy = 
                     new IStaleIndexValueStrategy()
                     {
-                        @Override
                         public void handle(EntityMetadata<?> entity, IndexMetadata index, Collection<StaleIndexValue> values)
                         {
                             _logger.warn("not handling {} stale values for {}", values.size(), entity.getFamilyName());
                         }
-                
                     };
         }
         
@@ -124,45 +121,31 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     }
 
     @Override
-    public void put(V value)
+    public final void put(V value)
     {
         _putHelper.put(value);
     }
 
+    
     @Override
-    public void mput(Collection<V> values)
+    public final void mput(Collection<V> values)
     {
         _putHelper.mput(values);
     }
 
     @Override
-    public V get(K key, V value, Object start, Object end)
+    public final V get(K key)
     {
-        return _getHelper.get(key, value, start, end);
+        return get(key, null, null);
     }
 
     @Override
-    public V get(K key, V value, Set<? extends Object> includes, Set<String> excludes)
+    public final V get(K key, V value, GetOptions options)
     {
-        return _getHelper.get(key, value, includes, excludes);
-    }
-
-    @Override
-    public List<V> mget(List<K> keys, List<V> values, Object start, Object end)
-    {
-        return _getHelper.mget(keys, values, start, end);
-    }
-
-    @Override
-    public List<V> mget(List<K> keys, List<V> values, Set<? extends Object> includes, Set<String> excludes)
-    {
-        return _getHelper.mget(keys, values, includes, excludes);
-    }
-
-    @Override
-    public V get(K key)
-    {
-        return _getHelper.get(key);
+        if(options == null)
+            options = new GetOptions();
+        
+        return _getHelper.get(key, value, options);
     }
 
     @Override
@@ -171,58 +154,52 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         return _getHelper.mget(keys);
     }
 
-    
+    @Override
+    public List<V> mget(List<K> keys, List<V> values, GetOptions options)
+    {
+        if(options == null)
+            options = new GetOptions();
+        
+        return _getHelper.mget(keys, values, options);
+    }
+
     @Override
     public V find(V template)
     {
-        return _findHelper.find(template);
+        return find(template, null);
     }
 
     @Override
-    public V find(V template, Object start, Object end)
+    public V find(V template, FindOptions options)
     {
-        return _findHelper.find(template, start, end);
+        return _findHelper.find(template, options);
     }
 
-    @Override
-    public V find(V template, Set<? extends Object> includes, Set<String> excludes)
-    {
-        return _findHelper.find(template, includes, excludes);
-    }
-
-    @Override
+    
     public Collection<V> mfind(V template)
     {
-        return _findHelper.mfind(template);
+        return mfind(template, null);
     }
 
-    @Override
-    public Collection<V> mfind(V template, Object start, Object end)
+    
+    public Collection<V> mfind(V template, FindOptions options)
     {
-        return _findHelper.mfind(template, start, end);
+        if(options == null)
+            options = new FindOptions();
+        return _findHelper.mfind(template, options);
     }
 
-    @Override
-    public Collection<V> mfind(V template, Set<? extends Object> includes, Set<String> excludes)
-    {
-        return _findHelper.mfind(template, includes, excludes);
-    }
-
-    @Override
     public Collection<V> mfindBetween(V startTemplate, V endTemplate)
     {
-        return _findHelper.mfindBetween(startTemplate, endTemplate);
+        return mfindBetween(startTemplate, endTemplate, null);
     }
 
-    @Override
-    public Collection<V> mfindBetween(V startTemplate, V endTemplate, Object startColumn, Object endColumn)
+    
+    public Collection<V> mfindBetween(V startTemplate, V endTemplate, FindBetweenOptions options)
     {
-        return _findHelper.mfindBetween(startTemplate, endTemplate, startColumn, endColumn);
-    }
-
-    @Override
-    public Collection<V> mfindBetween(V startTemplate, V endTemplate, Set<? extends Object> includes, Set<String> excludes)
-    {
-        return _findHelper.mfindBetween(startTemplate, endTemplate, includes, excludes);
+        if(options == null)
+            options = new FindBetweenOptions();
+        
+        return _findHelper.mfindBetween(startTemplate, endTemplate, options);
     }
 }
