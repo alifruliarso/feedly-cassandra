@@ -1,9 +1,7 @@
 package com.feedly.cassandra.test;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.Collections;
-import java.util.logging.LogManager;
 
 import me.prettyprint.cassandra.service.CassandraHostConfigurator;
 import me.prettyprint.cassandra.service.ThriftKsDef;
@@ -47,11 +45,6 @@ public class CassandraServiceTestBase
     {
         try
         {
-            InputStream stream = CassandraServiceTestBase.class.getClassLoader().getResourceAsStream("logging.properties");
-            if(stream == null)
-                throw new IllegalStateException("logging.properties not found in classpath");
-            
-            LogManager.getLogManager().readConfiguration(stream);
             cassandra = new EmbeddedCassandraService();
             boolean started = cassandra.cleanStart();
             

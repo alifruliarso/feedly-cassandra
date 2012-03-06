@@ -74,10 +74,10 @@ class GetHelper<K, V> extends LoadHelper<K, V>
 
     public List<V> mget(List<K> keys, List<V> values, GetOptions options)
     {
+        if(keys == null)
+            throw new IllegalArgumentException("keys parameter is null");
         if(values != null && keys.size() != values.size())
-        {
             throw new IllegalArgumentException("key and value list must be same size");
-        }
         
         switch(options.getColumnFilterStrategy())
         {
