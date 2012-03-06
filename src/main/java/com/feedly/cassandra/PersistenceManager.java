@@ -82,6 +82,18 @@ public class PersistenceManager implements IKeyspaceFactory
         _syncSchema = b;
     }
     
+    public void destroy()
+    {
+        try
+        {
+            _logger.info("stopping cassandra cluster");
+            HFactory.shutdownCluster(_cluster);
+        }
+        catch(Exception ex)
+        {
+            _logger.error("error shutting down cluster", ex);
+        }
+    }
     public void init()
     {
         if(_sourcePackages.length == 0)
