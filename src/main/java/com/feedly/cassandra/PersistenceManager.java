@@ -137,6 +137,11 @@ public class PersistenceManager implements IKeyspaceFactory
             syncKeyspace();
     }
     
+    public Set<Class<?>> getColumnFamilies()
+    {
+        return _colFamilies;
+    }
+    
     private void syncKeyspace()
     {
         KeyspaceDefinition kdef = _cluster.describeKeyspace(_keyspace);
