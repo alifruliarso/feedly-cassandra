@@ -51,5 +51,13 @@ public @interface Column
      */
     public boolean rangeIndexed() default false;
     
+    /**
+     * Partitions index columns into rows. This is neeeded for column families that have the potential to get extremely large. Cassandra
+     * allows up to 2 billion columns per row, so in most cases the default implementation (that places all values in a single row) should
+     * suffice.
+     * 
+     * @return the partitioner.
+     * @see SingleIndexRowPartitioner
+     */
     public Class<? extends IIndexRowPartitioner> rangeIndexPartitioner() default SingleIndexRowPartitioner.class;
 }

@@ -123,6 +123,7 @@ public class EntityUtils
         return o1.equals(o2);
     }
     
+    //not efficient, should be used only in exceptional cases
     public static boolean beanFieldsEqual(Object o1, Object o2)
     {
         if(!o1.getClass().equals(o2.getClass()))

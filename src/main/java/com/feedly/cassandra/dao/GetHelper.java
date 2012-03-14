@@ -14,6 +14,9 @@ import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.PropertyMetadata;
 
+/*
+ * helper class to do gets (reads by row key).
+ */
 class GetHelper<K, V> extends LoadHelper<K, V>
 {
     GetHelper(EntityMetadata<V> meta, IKeyspaceFactory factory)

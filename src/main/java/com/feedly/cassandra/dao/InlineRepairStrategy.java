@@ -14,6 +14,10 @@ import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.IndexMetadata;
 
+/**
+ * corrects index "inline", i.e. during the find operation.
+ * @author kireet
+ */
 public class InlineRepairStrategy implements IStaleIndexValueStrategy
 {
     private static final Logger _logger = LoggerFactory.getLogger(InlineRepairStrategy.class.getName());

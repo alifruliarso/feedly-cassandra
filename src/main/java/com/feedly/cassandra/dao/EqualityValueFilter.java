@@ -13,6 +13,13 @@ import com.feedly.cassandra.entity.IndexMetadata;
 import com.feedly.cassandra.entity.PropertyMetadata;
 import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 
+/**
+ * used to perform filter-on-read logic during index retrievals. This class handles equality checks.
+ * 
+ * @author kireet
+ *
+ * @param <V> the entity type
+ */
 class EqualityValueFilter<V> implements IValueFilter<V>
 {
     private final EntityMetadata<V> _entityMeta;

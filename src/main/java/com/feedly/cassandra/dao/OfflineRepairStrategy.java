@@ -16,6 +16,12 @@ import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.IndexMetadata;
 
+/**
+ * corrects index "inline", i.e. asynchronously. A thread pool is configured to handle the updates. If the thread pool gets overwhelmed,
+ * updates are simply dropped.
+ * 
+ * @author kireet
+ */
 public class OfflineRepairStrategy implements IStaleIndexValueStrategy
 {
     private static final Logger _logger = LoggerFactory.getLogger(OfflineRepairStrategy.class.getName());
@@ -89,11 +95,19 @@ public class OfflineRepairStrategy implements IStaleIndexValueStrategy
         _keyspaceFactory = keyspaceFactory;
     }
 
+    /**
+     * set the thread pool size.
+     * @param threadCount
+     */
     public void setThreadCount(int threadCount)
     {
         _threadCount = threadCount;
     }
 
+    /**
+     * set the thread pool queue size. If the queue is full, repair operations are dropped.
+     * @param queueSize
+     */
     public void setQueueSize(int queueSize)
     {
         _queueSize = queueSize;

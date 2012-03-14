@@ -28,6 +28,13 @@ import com.feedly.cassandra.anno.Indexes;
 import com.feedly.cassandra.anno.RowKey;
 import com.feedly.cassandra.anno.UnmappedColumnHandler;
 
+/**
+ * This class holds metadata for a given entity including key, property and index information.
+ * 
+ * @author kireet
+ * 
+ * @param <V> the entity type
+ */
 public class EntityMetadata<V>
 {
     private static final Logger _logger = LoggerFactory.getLogger(EntityMetadata.class.getName());

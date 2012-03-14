@@ -2,6 +2,7 @@ package com.feedly.cassandra.dao;
 
 import java.util.List;
 
+//use for filter on read operations
 class IndexedValue<V> 
 {
     private final List<Object> _indexValues;

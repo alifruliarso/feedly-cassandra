@@ -6,6 +6,11 @@ import java.util.List;
 
 import com.feedly.cassandra.IIndexRowPartitioner;
 
+/**
+ * Holds metadata for an entity index.
+ * 
+ * @author kireet
+ */
 public class IndexMetadata
 {
     private final EIndexType _type;

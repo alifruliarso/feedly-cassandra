@@ -12,6 +12,17 @@ import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.IndexMetadata;
 
+/**
+ * This class serves as a foundation class for saving and retrieving entities in Cassandra. Subclasses can define additional business logic
+ * related methods. Typically those methods then use functionality provided by this class.
+ * 
+ * @author kireet
+ *
+ * @param <K> the key type - should match the type of the Entity's row key field.
+ * @param <V> the value type - the Entity itself.
+ * 
+ * @see ICassandraDao
+ */
 public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
 {
     private static final Logger _logger = LoggerFactory.getLogger(CassandraDaoBase.class.getName());

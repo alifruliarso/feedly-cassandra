@@ -29,6 +29,9 @@ import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.IndexMetadata;
 import com.feedly.cassandra.entity.PropertyMetadata;
 
+/*
+ * used to fetch data using custom secondary indexes. Lazy loading is supported.
+ */
 public class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
 {
     private static final Logger _logger = LoggerFactory.getLogger(RangeIndexFindHelper.class.getName());

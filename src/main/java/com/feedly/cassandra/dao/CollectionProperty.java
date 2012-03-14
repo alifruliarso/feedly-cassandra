@@ -1,5 +1,12 @@
 package com.feedly.cassandra.dao;
 
+/**
+ * CollectionProperty objects are used when loading a subset of values from a collection stored within an entity. For Lists, the key should
+ * be an Integer.
+ * 
+ * @author kireet
+ * @see ICassandraDao
+ */
 public class CollectionProperty implements Comparable<CollectionProperty>
 {
     private String property;

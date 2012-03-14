@@ -19,6 +19,9 @@ import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.IndexMetadata;
 import com.feedly.cassandra.entity.PropertyMetadata;
 
+/*
+ * used to fetch data using native cassandra indexes. Lazy loading is supported.
+ */
 public class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
 {
     HashIndexFindHelper(EntityMetadata<V> meta, IKeyspaceFactory factory)

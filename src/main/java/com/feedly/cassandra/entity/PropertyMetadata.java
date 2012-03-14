@@ -17,6 +17,11 @@ import me.prettyprint.cassandra.serializers.StringSerializer;
 import me.prettyprint.hector.api.Serializer;
 import me.prettyprint.hector.api.beans.DynamicComposite;
 
+/**
+ * Holds metadata for a entity property (column family column)
+ * 
+ * @author kireet
+ */
 public class PropertyMetadata implements Comparable<PropertyMetadata>
 {
     private final byte[] _physicalNameBytes;

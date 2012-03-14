@@ -2,7 +2,15 @@ package com.feedly.cassandra.entity.enhance;
 
 import java.util.BitSet;
 
-//should never be directly implemented
+import com.feedly.cassandra.dao.CassandraDaoBase;
+
+/**
+ * This class is used by {@link CassandraDaoBase} to determine which fields have been updated and should be written or used for index finds.
+ * It should never be implemented directly, instead classes should be enhanced post compilation.
+ * 
+ * @author kireet
+ * @see ColumnFamilyTransformTask
+ */
 public interface IEnhancedEntity
 {
     public BitSet getModifiedFields();

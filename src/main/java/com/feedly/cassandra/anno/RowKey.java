@@ -8,7 +8,7 @@ import java.lang.annotation.Target;
 import me.prettyprint.hector.api.Serializer;
 
 /**
- * This annotation marks the field to 
+ * This annotation marks the field as the column family row key. Exactly one occurrence should exist in an Entity class.
  * @author kireet
  * @see ColumnFamily
  */

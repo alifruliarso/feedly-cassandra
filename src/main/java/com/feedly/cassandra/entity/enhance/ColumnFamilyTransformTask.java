@@ -18,6 +18,7 @@ import org.apache.tools.ant.types.FileSet;
 import org.objectweb.asm.ClassReader;
 
 import com.feedly.cassandra.FeedlyLogFormatter;
+import com.feedly.cassandra.dao.CassandraDaoBase;
 import com.feedly.cassandra.entity.EntityUtils;
 
 import feedly.net.sf.cglib.transform.AbstractTransformTask;
@@ -27,6 +28,12 @@ import feedly.net.sf.cglib.transform.MethodFilter;
 import feedly.net.sf.cglib.transform.MethodFilterTransformer;
 import feedly.net.sf.cglib.transform.impl.AddInitTransformer;
 
+/**
+ * This ant task should be run post compilation on Entity classes. It will perform the necessary byte code manipulation to track modified
+ * fields. This is used by {@link CassandraDaoBase} to only write modified fields to the database.
+ * 
+ * @author kireet
+ */
 public class ColumnFamilyTransformTask extends AbstractTransformTask
 {
     private List<File> _files = new ArrayList<File>();

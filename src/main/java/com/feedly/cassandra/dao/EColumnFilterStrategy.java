@@ -2,5 +2,16 @@ package com.feedly.cassandra.dao;
 
 enum EColumnFilterStrategy
 {
-    UNFILTERED, RANGE, INCLUDES;
+    /**
+     * retrieve all columns
+     */
+    UNFILTERED, 
+    /**
+     * retrieve a range of columns
+     */
+    RANGE,
+    /**
+     * retrive a specific set of columns
+     */
+    INCLUDES;
 }

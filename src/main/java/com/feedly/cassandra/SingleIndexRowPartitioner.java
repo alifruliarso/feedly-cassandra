@@ -3,6 +3,11 @@ package com.feedly.cassandra;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * The default index partitioner that places all index values in a single partition.
+ * 
+ * @author kireet
+ */
 public class SingleIndexRowPartitioner implements IIndexRowPartitioner
 {
     private final Byte VAL = new Byte((byte)0);
