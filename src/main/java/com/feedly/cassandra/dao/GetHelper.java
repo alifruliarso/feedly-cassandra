@@ -114,7 +114,7 @@ class GetHelper<K, V> extends LoadHelper<K, V>
     @SuppressWarnings({ "rawtypes", "unchecked" })
     private V loadFromGet(K key, V value, List<byte[]> cols, byte[] from, byte[] to)
     {
-        _logger.debug(String.format("loading {}[{}]", _entityMeta.getFamilyName(), key));
+        _logger.debug("loading {}[{}]", _entityMeta.getFamilyName(), key);
 
         PropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
         byte[] keyBytes = ((Serializer) keyMeta.getSerializer()).toBytes(key);

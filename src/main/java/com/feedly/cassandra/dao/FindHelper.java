@@ -84,7 +84,7 @@ public class FindHelper<K, V> extends LoadHelper<K, V>
         
         if(matching != null)
         {
-            _logger.info("selected index {} [{} of {} col(s)]",  matching, matchCnt);
+            _logger.info("selected index {} [{} of {} col(s)]", new Object[] {matching, matchCnt, matching.getIndexedProperties().size()});
             return matching;
         }
         

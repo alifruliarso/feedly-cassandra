@@ -22,7 +22,7 @@ import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 
 abstract class BaseDaoHelper<K,V>
 {
-    protected static final Logger _logger = LoggerFactory.getLogger(CassandraDaoBase.class.getName());
+    protected final Logger _logger = LoggerFactory.getLogger(getClass().getName());
 
     protected static final BytesArraySerializer SER_BYTES = BytesArraySerializer.get();
     protected static final StringSerializer SER_STRING = StringSerializer.get();
