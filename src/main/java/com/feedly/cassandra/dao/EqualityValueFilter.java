@@ -1,10 +1,8 @@
 package com.feedly.cassandra.dao;
 
-import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -24,26 +22,12 @@ class EqualityValueFilter<V> implements IValueFilter<V>
 {
     private final EntityMetadata<V> _entityMeta;
     private final Map<PropertyMetadata, Object> _propsFilter = new HashMap<PropertyMetadata, Object>();
-    private final List<Object> _indexFilter = new ArrayList<Object>();
-    private final boolean _validateIdxVals;
     
-    public EqualityValueFilter(EntityMetadata<V> meta, V template, boolean validateIdxVals, IndexMetadata index)
+    public EqualityValueFilter(EntityMetadata<V> meta, V template, IndexMetadata index)
     {
         _entityMeta = meta;
-        _validateIdxVals = validateIdxVals;
         BitSet dirty = ((IEnhancedEntity)template).getModifiedFields();
         Set<PropertyMetadata> indexedProps = new HashSet<PropertyMetadata>();
-        
-        for(PropertyMetadata pm : index.getIndexedProperties())
-        {
-            Object val = invokeGetter(pm, template);
-            if(val != null)
-                _indexFilter.add(val);
-            else
-                break;
-            
-            indexedProps.add(pm);
-        }
         
         for(int i = dirty.nextSetBit (0); i>= 0; i = dirty.nextSetBit(i+1)) 
         {
@@ -52,26 +36,16 @@ class EqualityValueFilter<V> implements IValueFilter<V>
             if(!indexedProps.contains(p))
                 _propsFilter.put(p, invokeGetter(p, template));
         }
+        
+
+        for(PropertyMetadata pm : index.getIndexedProperties())
+        {
+            _propsFilter.remove(pm);
+        }
     }
     
     public EFilterResult isFiltered(IndexedValue<V> value)
     {
-        
-        if(_validateIdxVals)
-        {
-            List<Object> idxVals = value.getIndexValues();
-            int numIdxFilterVals = _indexFilter.size();
-            int numVals = idxVals.size();
-            
-            if(numVals < numIdxFilterVals) //value must match the entire filter but has null values
-                return EFilterResult.FAIL_STALE;
-            
-            for(int i = 0; i < numIdxFilterVals; i++)
-            {
-                if(!idxVals.get(i).equals(_indexFilter.get(i)))
-                    return EFilterResult.FAIL_STALE;
-            }
-        }
         
         for(Map.Entry<PropertyMetadata, Object> entry : _propsFilter.entrySet())
         {

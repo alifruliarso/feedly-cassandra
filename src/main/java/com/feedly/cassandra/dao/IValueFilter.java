@@ -1,7 +1,8 @@
 package com.feedly.cassandra.dao;
 
 /**
- * Used to perform filter on read operations when retrieving indexed values.
+ * Used to perform filter on read operations when retrieving indexed values. Index values are inherently checked, implementations need only
+ * do any further checks that are necessary.
  * 
  * @author kireet
  *

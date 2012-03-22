@@ -1,5 +1,6 @@
 package com.feedly.cassandra.dao;
 
+import java.nio.ByteBuffer;
 import java.util.AbstractCollection;
 import java.util.ArrayList;
 import java.util.BitSet;
@@ -69,7 +70,7 @@ public class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
     {
         RangeIndexQueryResult<K> result = findKeys(template, template, EFindOrder.NONE, options.getMaxRows(), index);
         
-        IValueFilter<V> filter = new EqualityValueFilter<V>(_entityMeta, template, true, index);
+        IValueFilter<V> filter = new EqualityValueFilter<V>(_entityMeta, template, index);
         return new LazyLoadedCollection(result, filter, options, EFindOrder.NONE, index);
     }
     
@@ -103,7 +104,33 @@ public class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
             else
             {
                 IndexedValue<V> idxValue = indexedValue(value, index);
-                EFilterResult result = filter.isFiltered(idxValue);
+                
+                List<Object> idxPropVals = indexValues.get(i).getColumnName();
+                List<Object> rowPropVals = idxValue.getIndexValues();
+
+                EFilterResult result = null;
+                
+                if(rowPropVals.size() != idxPropVals.size() - 1) //last value of index column is row key
+                    result = EFilterResult.FAIL_STALE;
+                else
+                {
+                    for(int j = rowPropVals.size() - 1; j >= 0; j--)
+                    {
+                        Object idxPropVal = idxPropVals.get(j);
+                        if(idxPropVal instanceof ByteBuffer)
+                        {
+                            idxPropVal = index.getIndexedProperties().get(j).getSerializer().fromByteBuffer((ByteBuffer) idxPropVal);
+                        }
+                        if(!idxPropVal.equals(rowPropVals.get(j)))
+                        {
+                            result = EFilterResult.FAIL_STALE;
+                            break;
+                        }
+                    }
+                }
+                
+                if(result == null)
+                    result = filter.isFiltered(idxValue);
                 
                 if(result == EFilterResult.FAIL_STALE)
                 {
@@ -553,11 +580,7 @@ public class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
                 {
                     if(rows.size() > _remRows) //trim
                     {
-                        if(_order == EFindOrder.DESCENDING)
-                            rows = rows.subList(rows.size() - _remRows, rows.size());
-                        else
-                            rows = rows.subList(0, _remRows);
-                        
+                        rows = rows.subList(0, _remRows);
                         rows = new ArrayList<V>(rows); //detach from original list
                     }
                 }
@@ -632,11 +655,7 @@ public class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
                 {
                     if(rows.size() > maxRows) //trim
                     {
-                        if(order == EFindOrder.DESCENDING)
-                            rows = rows.subList(rows.size() - maxRows, rows.size());
-                        else
-                            rows = rows.subList(0, maxRows);
-                        
+                        rows = rows.subList(0, maxRows);
                         rows = new ArrayList<V>(rows); //detach from original list
                     }
                 }

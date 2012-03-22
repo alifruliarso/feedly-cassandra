@@ -27,8 +27,8 @@ public class TestPartitioner implements IIndexRowPartitioner
     @Override
     public List<List<Object>> partitionValue(List<Object> idxValue)
     {
-        Object first = idxValue.get(0);
-        List<List<Object>> rv = Collections.singletonList(Collections.singletonList(first)); 
+        Long first = (Long) idxValue.get(0);
+        List<List<Object>> rv = Collections.singletonList(Collections.<Object>singletonList(first/2)); 
         _audit.add(rv);
         return rv;
     }
@@ -36,8 +36,8 @@ public class TestPartitioner implements IIndexRowPartitioner
     @Override
     public List<List<Object>> partitionRange(List<Object> startIdxValues, List<Object> endIdxValues)
     {
-        Object start = startIdxValues.get(0);
-        Object end = endIdxValues.get(0);
+        Long start = (Long) startIdxValues.get(0);
+        Long end = (Long) endIdxValues.get(0);
         
         List<List<Object>> rv = range(start, end);
         _rangeAudit.add(rv);
@@ -48,27 +48,11 @@ public class TestPartitioner implements IIndexRowPartitioner
     private List<List<Object>> range(Object start, Object end)
     {
         List<List<Object>> range = new ArrayList<List<Object>>();
-        if(start instanceof String)
-        {
-            char first = ((String) start).charAt(0);
-            char last = ((String) end).charAt(1);
-            
-            for(char c = first; c <= last; c++)
-                range.add(Collections.<Object>singletonList(c));
-        }
-        else if(start instanceof Number)
-        {
-            long first = ((Number) start).longValue();
-            long last = ((Number) end).longValue();
-            
-            for(long c = first; c <= last; c++)
-                range.add(Collections.<Object>singletonList(c));
-        }
-        else
-        {
-            range.add(Collections.<Object>singletonList(new Byte((byte)0)));
-        }
+        long first = ((Number) start).longValue();
+        long last = ((Number) end).longValue();
         
+        for(long c = first/2; c <= last/2; c++)
+            range.add(Collections.<Object>singletonList(c));
         
         return range;
     }

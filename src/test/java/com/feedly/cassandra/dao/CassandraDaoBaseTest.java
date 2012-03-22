@@ -1651,10 +1651,10 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         {
             cnt++;
             Row<byte[], byte[], byte[]> row = iterator.next();
-            assertEquals(10, row.getColumnSlice().getColumns().size());
+            assertEquals(20, row.getColumnSlice().getColumns().size());
         }
         
-        assertEquals(numBeans/10, cnt);
+        assertEquals(numBeans/20, cnt);
         
         TestPartitioner.partitionHistory().clear();
         assertTrue(TestPartitioner.rangePartitionHistory().isEmpty());
@@ -1670,7 +1670,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         assertBeansEqual(idxBeans.subList(50, 60), actual);
         assertEquals(1, TestPartitioner.partitionHistory().size());
         assertEquals(1, TestPartitioner.partitionHistory().get(0).get(0).size());
-        assertEquals(5L, TestPartitioner.partitionHistory().get(0).get(0).get(0));
+        assertEquals(2L, TestPartitioner.partitionHistory().get(0).get(0).get(0));
         assertTrue(TestPartitioner.rangePartitionHistory().isEmpty());
         
         TestPartitioner.partitionHistory().clear();
@@ -1688,9 +1688,8 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         assertTrue(TestPartitioner.partitionHistory().isEmpty());
         assertEquals(1, TestPartitioner.rangePartitionHistory().size());
         List<List<Object>> expectedRange = new ArrayList<List<Object>>();
-        expectedRange.add(Collections.<Object>singletonList(5L));
-        expectedRange.add(Collections.<Object>singletonList(6L));
-        expectedRange.add(Collections.<Object>singletonList(7L));
+        expectedRange.add(Collections.<Object>singletonList(2L));
+        expectedRange.add(Collections.<Object>singletonList(3L));
         
         assertBeansEqual(expectedRange, TestPartitioner.rangePartitionHistory().get(0));
         

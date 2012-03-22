@@ -105,7 +105,7 @@ public class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
         return new LazyLoadedCollection(query, 
                                         endBytes, 
                                         fullCollectionProperties, 
-                                        new EqualityValueFilter<V>(_entityMeta, template, false, index), 
+                                        new EqualityValueFilter<V>(_entityMeta, template, index), 
                                         maxRows,
                                         index);
     }
