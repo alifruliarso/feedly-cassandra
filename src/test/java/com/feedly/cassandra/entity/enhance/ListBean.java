@@ -21,7 +21,7 @@ public class ListBean implements Comparable<ListBean>, Cloneable
     @Column(hashIndexed=true)
     private String strProp;
     
-    @Column
+    @Column(col="l")
     private List<Object> listProp;
 
     public Long getRowkey()

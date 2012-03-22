@@ -458,11 +458,11 @@ abstract class LoadHelper<K,V> extends BaseDaoHelper<K, V>
             for(PropertyMetadata pm : fullCollectionProperties)
             {
                 DynamicComposite dc = new DynamicComposite();
-                dc.addComponent(0, pm.getName(), ComponentEquality.EQUAL);
+                dc.addComponent(0, pm.getPhysicalName(), ComponentEquality.EQUAL);
                 byte[] colBytes = SER_COMPOSITE.toBytes(dc);
                 
                 dc = new DynamicComposite();
-                dc.addComponent(0, pm.getName(), ComponentEquality.GREATER_THAN_EQUAL); //little strange, this really means the first value greater than... 
+                dc.addComponent(0, pm.getPhysicalName(), ComponentEquality.GREATER_THAN_EQUAL); //little strange, this really means the first value greater than... 
                 byte[] colBytesEnd = SER_COMPOSITE.toBytes(dc);
                 
                 values = bulkLoadFromMultiGet(keys, values, null, colBytes, colBytesEnd, true);

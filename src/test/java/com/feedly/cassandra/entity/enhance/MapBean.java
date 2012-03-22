@@ -24,7 +24,7 @@ public class MapBean implements Comparable<MapBean>, Cloneable
     @Column
     private String strProp;
     
-    @Column
+    @Column(col="m")
     private Map<String, Object> mapProp;
 
     @UnmappedColumnHandler(StringSerializer.class)

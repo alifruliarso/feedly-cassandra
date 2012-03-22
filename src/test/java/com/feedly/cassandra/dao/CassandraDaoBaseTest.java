@@ -250,8 +250,8 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         assertEquals(5, slice.getColumns().size());
         assertColumn(mapBean.getStrProp(), false, slice.getColumnByName(new DynamicComposite("strProp")));
         assertColumn(mapBean.getStrProp1(), false, slice.getColumnByName(new DynamicComposite("strProp1")));
-        assertColumn(mapBean.getMapProp().get("strMapProp"), true, slice.getColumnByName(new DynamicComposite("mapProp", "strMapProp")));
-        assertColumn(mapBean.getMapProp().get("longMapProp"), true, slice.getColumnByName(new DynamicComposite("mapProp", "longMapProp")));
+        assertColumn(mapBean.getMapProp().get("strMapProp"), true, slice.getColumnByName(new DynamicComposite("m", "strMapProp")));
+        assertColumn(mapBean.getMapProp().get("longMapProp"), true, slice.getColumnByName(new DynamicComposite("m", "longMapProp")));
         
         //try serializing using unmapped handler with specified serializer 
         assertColumn(mapBean.getUnmapped().get("unmapped-1"), false, slice.getColumnByName(new DynamicComposite("unmapped-1")));
@@ -266,7 +266,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         assertEquals(3, slice.getColumns().size());
         assertColumn(mapBean.getStrProp(), false, slice.getColumnByName(new DynamicComposite("strProp")));
         assertColumn(mapBean.getStrProp1(), false, slice.getColumnByName(new DynamicComposite("strProp1")));
-        assertColumn(mapBean.getMapProp().get("longMapProp"), true, slice.getColumnByName(new DynamicComposite("mapProp", "longMapProp")));
+        assertColumn(mapBean.getMapProp().get("longMapProp"), true, slice.getColumnByName(new DynamicComposite("m", "longMapProp")));
 
         /*
          * SortedMap
@@ -294,8 +294,8 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         assertEquals(4, slice.getColumns().size());
         assertColumn(sortedMapBean.getStrProp(), false, slice.getColumnByName(new DynamicComposite("strProp")));
         assertColumn(sortedMapBean.getStrProp1(), false, slice.getColumnByName(new DynamicComposite("strProp1")));
-        assertColumn(sortedMapBean.getMapProp().get("strMapProp"), true, slice.getColumnByName(new DynamicComposite("mapProp", "strMapProp")));
-        assertColumn(sortedMapBean.getMapProp().get("longMapProp"), true, slice.getColumnByName(new DynamicComposite("mapProp", "longMapProp")));
+        assertColumn(sortedMapBean.getMapProp().get("strMapProp"), true, slice.getColumnByName(new DynamicComposite("m", "strMapProp")));
+        assertColumn(sortedMapBean.getMapProp().get("longMapProp"), true, slice.getColumnByName(new DynamicComposite("m", "longMapProp")));
         
         //null out a value and resave
         sortedMapBean.getMapProp().put("strMapProp", null);
@@ -306,7 +306,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         assertEquals(3, slice.getColumns().size());
         assertColumn(sortedMapBean.getStrProp(), false, slice.getColumnByName(new DynamicComposite("strProp")));
         assertColumn(sortedMapBean.getStrProp1(), false, slice.getColumnByName(new DynamicComposite("strProp1")));
-        assertColumn(sortedMapBean.getMapProp().get("longMapProp"), true, slice.getColumnByName(new DynamicComposite("mapProp", "longMapProp")));
+        assertColumn(sortedMapBean.getMapProp().get("longMapProp"), true, slice.getColumnByName(new DynamicComposite("m", "longMapProp")));
 
         /*
          * List
@@ -336,9 +336,9 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         assertEquals(5, slice.getColumns().size());
         assertColumn(bean.getStrProp(), false, slice.getColumnByName(new DynamicComposite("strProp")));
         assertColumn(bean.getStrProp1(), false, slice.getColumnByName(new DynamicComposite("strProp1")));
-        assertColumn(bean.getListProp().get(0), true, slice.getColumnByName(new DynamicComposite("listProp", 0)));
-        assertColumn(bean.getListProp().get(1), true, slice.getColumnByName(new DynamicComposite("listProp", 1)));
-        assertColumn(bean.getListProp().get(2), true, slice.getColumnByName(new DynamicComposite("listProp", 2)));
+        assertColumn(bean.getListProp().get(0), true, slice.getColumnByName(new DynamicComposite("l", 0)));
+        assertColumn(bean.getListProp().get(1), true, slice.getColumnByName(new DynamicComposite("l", 1)));
+        assertColumn(bean.getListProp().get(2), true, slice.getColumnByName(new DynamicComposite("l", 2)));
         
         //null out a value and resave
         bean.getListProp().set(1, null);
@@ -349,8 +349,8 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         assertEquals(4, slice.getColumns().size());
         assertColumn(bean.getStrProp(), false, slice.getColumnByName(new DynamicComposite("strProp")));
         assertColumn(bean.getStrProp1(), false, slice.getColumnByName(new DynamicComposite("strProp1")));
-        assertColumn(bean.getListProp().get(0), true, slice.getColumnByName(new DynamicComposite("listProp", 0)));
-        assertColumn(bean.getListProp().get(2), true, slice.getColumnByName(new DynamicComposite("listProp", 1)));
+        assertColumn(bean.getListProp().get(0), true, slice.getColumnByName(new DynamicComposite("l", 0)));
+        assertColumn(bean.getListProp().get(2), true, slice.getColumnByName(new DynamicComposite("l", 1)));
     }
 
     

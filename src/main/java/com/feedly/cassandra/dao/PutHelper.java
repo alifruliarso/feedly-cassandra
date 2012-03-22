@@ -297,7 +297,7 @@ public class PutHelper<K, V> extends BaseDaoHelper<K, V>
                                                              propVal));
         }
 
-        DynamicComposite colName = new DynamicComposite(colMeta.getName(), propKey);
+        DynamicComposite colName = new DynamicComposite(colMeta.getPhysicalName(), propKey);
         if(propVal == null)
         {
             mutator.addDeletion(keyBytes, _entityMeta.getFamilyName(), colName, SER_COMPOSITE, clock);
