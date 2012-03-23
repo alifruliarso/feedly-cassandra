@@ -63,7 +63,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
 
         _entityMeta = new EntityMetadata<V>(valueClass);
 
-        if(!_entityMeta.getKeyMetadata().getFieldType().equals(keyClass))
+        if(!keyClassMatches(_entityMeta.getKeyMetadata().getFieldType(), keyClass))
             throw new IllegalArgumentException(String.format("DAO/entity key mismatch: %s != %s",
                                                              keyClass.getName(),
                                                              _entityMeta.getKeyMetadata().getFieldType().getName()));
@@ -103,6 +103,43 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         _getHelper = new GetHelper<K, V>(_entityMeta, _keyspaceFactory);
         _findHelper = new FindHelper<K, V>(_entityMeta, _keyspaceFactory, _staleIndexValueStrategy);
         _putHelper = new PutHelper<K, V>(_entityMeta, _keyspaceFactory);
+    }
+    
+    private boolean keyClassMatches(Class<?> fieldType, Class<?> keyType)
+    {
+        if(fieldType.equals(keyType))
+            return true;
+
+        if(fieldType.isPrimitive())
+        {
+            if(fieldType.equals(boolean.class))
+                fieldType = Boolean.class;
+            
+            if(fieldType.equals(byte.class))
+                fieldType = Byte.class;
+
+            if(fieldType.equals(char.class))
+                fieldType = Character.class;
+
+            if(fieldType.equals(short.class))
+                fieldType = Short.class;
+
+            if(fieldType.equals(int.class))
+                fieldType = Integer.class;
+
+            if(fieldType.equals(long.class))
+                fieldType = Long.class;
+
+            if(fieldType.equals(float.class))
+                fieldType = Float.class;
+
+            if(fieldType.equals(double.class))
+                fieldType = Double.class;
+
+            return fieldType.equals(keyType);
+        }
+
+        return false;
     }
     
     private Class<?> getGenericClass(int idx)
