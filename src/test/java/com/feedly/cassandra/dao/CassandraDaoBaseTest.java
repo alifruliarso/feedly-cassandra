@@ -461,6 +461,50 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
     }
 
     @Test
+    public void testSimpleMgetAll()
+    {
+        int numBeans = 105;
+        List<SampleBean> beans = new ArrayList<SampleBean>();
+        List<Long> keys = new ArrayList<Long>();
+        
+        for(int i = 0; i < numBeans; i++)
+        {
+            SampleBean bean = new SampleBean();
+            bean.setRowKey(new Long(i));
+            bean.setBoolVal(i%2 == 0);
+            bean.setCharVal((char) ('a' + i));
+            bean.setDateVal(new Date(System.currentTimeMillis() + 60000*i));
+            bean.setDoubleVal(i * .1);
+            bean.setFloatVal(i / .5f);
+            bean.setIntVal(i);
+            bean.setLongVal(-i);
+            bean.setStrVal("str-" + i);
+            
+            beans.add(bean);
+            keys.add(beans.get(i).getRowKey());
+            
+            bean.setUnmapped(new HashMap<String, Object>());
+            for(int j = 0; j <= 100; j++)
+                bean.getUnmapped().put("unmapped-" + j, "val-" + i + "-" + j);
+        }
+        
+        _dao.mput(beans);
+
+        List<SampleBean> actual = new ArrayList<SampleBean>( _dao.mgetAll() );
+
+        Collections.sort(actual);
+        assertEquals(beans.size(), actual.size());
+        
+        for(int i = beans.size() - 1; i >= 0; i--)
+        {
+            SampleBean loaded = actual.get(i);
+            assertEquals("bean[" + i + "]", beans.get(i), loaded);
+
+            assertTrue(((IEnhancedEntity) loaded).getModifiedFields().isEmpty());
+        }
+    }
+    
+    @Test
     public void testMapGet()
     {
         int numBeans = 5;
@@ -498,8 +542,21 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         }
         
         
-        //bulk load
-        List<MapBean> loaded = new ArrayList<MapBean>( _mapDao.mget(keys));
+        /*
+         * bulk load
+         */
+        
+        //get all
+        List<MapBean> loaded = new ArrayList<MapBean>( _mapDao.mgetAll());
+        Collections.sort(loaded);
+        for(MapBean bean : beans)
+        {
+            assertTrue(((IEnhancedEntity) bean).getModifiedFields().isEmpty());
+        }
+        assertBeansEqual(beans, loaded);
+
+        //get multiple
+        loaded = new ArrayList<MapBean>( _mapDao.mget(keys));
         Collections.sort(loaded);
         for(MapBean bean : beans)
         {
@@ -523,6 +580,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         }
         
         assertEquals(bean0, _mapDao.get(bean0.getRowkey()));
+        
     }
     
     @Test
@@ -612,8 +670,20 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             assertEquals(bean, loaded);
         }
 
-        //bulk load
-        List<ListBean> loaded = new ArrayList<ListBean>( _listDao.mget(keys));
+        /*
+         * bulk load
+         */
+        //load all
+        List<ListBean> loaded = new ArrayList<ListBean>( _listDao.mgetAll());
+        Collections.sort(loaded);
+        for(ListBean bean : beans)
+        {
+            assertTrue(((IEnhancedEntity) bean).getModifiedFields().isEmpty());
+        }
+        assertBeansEqual(beans, loaded);
+        
+        //load multiple
+        loaded = new ArrayList<ListBean>( _listDao.mget(keys));
         Collections.sort(loaded);
         for(ListBean bean : beans)
         {
@@ -669,9 +739,14 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
 
         _dao.mput(beans);
 
+        List<SampleBean> bulkActuals = _dao.mget(keys, null, new GetOptions(null, Collections.singleton("boolVal")));
+        List<SampleBean> bulkAllActuals = new ArrayList<SampleBean>(_dao.mgetAll(new GetOptions(null, Collections.singleton("boolVal"))));
 
-        for(SampleBean saved : beans)
+        Collections.sort(bulkActuals);
+        Collections.sort(bulkAllActuals);
+        for(int i = 0; i < numBeans; i++)
         {
+            SampleBean saved = beans.get(i);
             SampleBean expected = (SampleBean) saved.clone();
             
             expected.setBoolVal(false); //false is default value for boolean
@@ -679,26 +754,57 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             SampleBean actual = _dao.get(saved.getRowKey(), null, new GetOptions(null, Collections.singleton("boolVal")));
             
             assertEquals(expected, actual);
-            
-            expected = new SampleBean();
+            assertEquals(expected, bulkActuals.get(i));
+            assertEquals(expected, bulkAllActuals.get(i));
+        }
+        
+        Set<String> props = new HashSet<String>();
+        props.add("charVal");
+        for(int j = 20; j >= 11; j--)
+            props.add("unmapped-" + j);
+        
+        bulkActuals = _dao.mget(keys, null, new GetOptions(props, null));
+        bulkAllActuals = new ArrayList<SampleBean>(_dao.mgetAll(new GetOptions(props, null)));
+        Collections.sort(bulkActuals);
+        Collections.sort(bulkAllActuals);
+        assertEquals(numBeans, bulkActuals.size());
+        assertEquals(numBeans, bulkAllActuals.size());
+        
+        List<SampleBean> expecteds = new ArrayList<SampleBean>();
+        List<SampleBean> actuals = new ArrayList<SampleBean>();
+        for(int i = 0; i < numBeans; i++)
+        {
+            SampleBean saved = beans.get(i);
+            SampleBean expected =  new SampleBean();
             expected.setRowKey(saved.getRowKey());
             expected.setCharVal(saved.getCharVal());
             TreeMap<String, Object> unmapped = new TreeMap<String, Object>(saved.getUnmapped());
-            for(int i = saved.getUnmapped().size()/2; i >= 0; i--)
-                unmapped.remove(unmapped.firstEntry().getKey());
+            for(int j = 10; j >= 0; j--)
+                unmapped.remove("unmapped-" + j);
             
             expected.setUnmapped(unmapped);
             
-            Set<String> props = new HashSet<String>(unmapped.keySet());
-            props.add("charVal");
             
-            actual = _dao.get(saved.getRowKey(), null, new GetOptions(props, null));
+            SampleBean actual = _dao.get(saved.getRowKey(), null, new GetOptions(props, null));
             assertEquals(expected, actual);
+            assertEquals(expected, bulkActuals.get(i));
+            assertEquals(expected, bulkAllActuals.get(i));
             
+            expecteds.add(expected);
+            actuals.add(expected);
+        }
+        
+        _dao.mget(keys, bulkActuals, new GetOptions(Collections.singleton("intVal"), null));
+        for(int i = 0; i < numBeans; i++)
+        {
+            SampleBean saved = beans.get(i);
+            SampleBean actual = actuals.get(i);
+            SampleBean expected = expecteds.get(i);
             expected.setIntVal(saved.getIntVal());
             _dao.get(saved.getRowKey(), actual, new GetOptions(Collections.singleton("intVal"), null)); //update the bean
             
             assertEquals(expected, actual);
+            assertEquals(expected, bulkActuals.get(i));
         }
         
     }
@@ -732,9 +838,11 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         }
         
         _dao.mput(beans);
+        List<SampleBean> bulkAllActuals = new ArrayList<SampleBean>(_dao.mgetAll(new GetOptions("c", "cv")));
         List<SampleBean> bulkActuals = _dao.mget(keys, null, new GetOptions("c", "cv"));
         List<SampleBean> actuals = new ArrayList<SampleBean>();
         List<SampleBean> expecteds = new ArrayList<SampleBean>();
+        Collections.sort(bulkAllActuals);
         Collections.sort(bulkActuals);
         
         for(int i = 0; i < beans.size(); i++)
@@ -749,6 +857,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             
             assertEquals(expected, actuals.get(i));
             assertEquals(expected, bulkActuals.get(i));
+            assertEquals(expected, bulkAllActuals.get(i));
             
             expecteds.add(expected);
         }
@@ -839,9 +948,14 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             assertEquals(expected, bulkListActuals.get(i));
         }
 
+        List<ListBean> bulkListAllActuals = new ArrayList<ListBean>(_listDao.mgetAll(new GetOptions(new CollectionProperty("listProp", 25),  
+                                                                                                    new CollectionProperty("listProp", 175))));
+        
         _listDao.mget(keys, bulkListActuals, new GetOptions(new CollectionProperty("listProp", 25),  new CollectionProperty("listProp", 175)));
         assertEquals(numBeans, bulkListActuals.size());
+        assertEquals(numBeans, bulkListAllActuals.size());
 
+        Collections.sort(bulkListAllActuals);
         for(int i = 0; i < listBeans.size(); i++)
         {
             ListBean saved = listBeans.get(i);
@@ -857,6 +971,9 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             
             assertEquals(expected, singleListActuals.get(i));
             assertEquals(expected, bulkListActuals.get(i));
+
+            expected.setStrProp1(null);
+            assertEquals(expected, bulkListAllActuals.get(i));
         }
         
         /*
@@ -892,9 +1009,15 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
          * load a range from within a collection
          */
         String start = "key-100", end = "key-201";
+        List<MapBean> bulkMapAllActuals = 
+                new ArrayList<MapBean>(_mapDao.mgetAll(new GetOptions(new CollectionProperty("mapProp", start), new CollectionProperty("mapProp", end))));
         bulkMapActuals = _mapDao.mget(keys, mapActuals, 
                                       new GetOptions(new CollectionProperty("mapProp", start), new CollectionProperty("mapProp", end)));
+
         assertEquals(numBeans, bulkMapActuals.size());
+        assertEquals(numBeans, bulkMapAllActuals.size());
+        
+        Collections.sort(bulkMapAllActuals);
         for(int i = 0; i < mapBeans.size(); i++)
         {
             MapBean saved = mapBeans.get(i);
@@ -915,6 +1038,9 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             
             assertEquals(expected, mapActuals.get(i));
             assertEquals(expected, bulkMapActuals.get(i));
+            
+            expected.setStrProp1(null);
+            assertEquals(expected, bulkMapAllActuals.get(i));
         }
     }
 

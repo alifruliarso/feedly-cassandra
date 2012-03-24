@@ -212,6 +212,21 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     }
 
     @Override
+    public Collection<V> mgetAll()
+    {
+        return mgetAll(null);
+    }
+
+    @Override
+    public Collection<V> mgetAll(GetOptions options)
+    {
+        if(options == null)
+            options = new GetOptions();
+        
+        return _getHelper.mgetAll(options);
+    }
+
+    @Override
     public V find(V template)
     {
         return find(template, null);

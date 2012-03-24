@@ -56,6 +56,22 @@ public interface ICassandraDao<K, V>
     public Collection<V> mget(Collection<K> keys);
 
     /**
+     * fetch all entities by row key, using default options. Use with care when dealing with large column families.
+     * 
+     * @return the entities.
+     */
+    public Collection<V> mgetAll();
+
+    /**
+     * fetch all entities by row key, using specified options. Use with care when dealing with large column families.  
+     * 
+     * @param options the get options.
+     * @return the entities.
+     */
+    public Collection<V> mgetAll(GetOptions options);
+
+
+    /**
      * fetch entities by row key, using specified options. This is functionally equivalent to {@link #get(Object, Object, GetOptions)}, the
      *  main difference will be improved performance by batching the reads.
      * @param keys the row keys.

@@ -497,8 +497,6 @@ public class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
         return rows;
     }
     
-//    private class IndexValuesComparator implements Comparable
-    
     private class LazyLoadedIterator implements Iterator<V>
     {
         private int _remRows; //remaining rows left to fetch, based on max set by user and if the last batch fetched was maximal
