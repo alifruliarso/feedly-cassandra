@@ -3,7 +3,7 @@ package com.feedly.cassandra.dao;
 import java.util.ArrayList;
 import java.util.List;
 
-public class RangeIndexQueryResult<K> implements Cloneable
+class RangeIndexQueryResult<K> implements Cloneable
 {
     List<K> _currentKeys = new ArrayList<K>();
     List<StaleIndexValue> _currentValues = new ArrayList<StaleIndexValue>();

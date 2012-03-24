@@ -2,7 +2,7 @@ package com.feedly.cassandra.dao;
 
 import me.prettyprint.hector.api.beans.DynamicComposite;
 
-public class RangeIndexQueryPartitionResult implements Cloneable
+class RangeIndexQueryPartitionResult implements Cloneable
 {
     private DynamicComposite _partitionKey;
     private DynamicComposite _startCol, _endCol;

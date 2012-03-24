@@ -33,6 +33,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     private GetHelper<K, V> _getHelper;
     private FindHelper<K, V> _findHelper;
     private PutHelper<K, V> _putHelper;
+    private DeleteHelper<K, V> _deleteHelper;
     private IKeyspaceFactory _keyspaceFactory;
     private IStaleIndexValueStrategy _staleIndexValueStrategy;
     
@@ -103,6 +104,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         _getHelper = new GetHelper<K, V>(_entityMeta, _keyspaceFactory);
         _findHelper = new FindHelper<K, V>(_entityMeta, _keyspaceFactory, _staleIndexValueStrategy);
         _putHelper = new PutHelper<K, V>(_entityMeta, _keyspaceFactory);
+        _deleteHelper = new DeleteHelper<K, V>(_entityMeta, _keyspaceFactory);
     }
     
     private boolean keyClassMatches(Class<?> fieldType, Class<?> keyType)
@@ -266,5 +268,17 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
             options = new FindBetweenOptions();
         
         return _findHelper.mfindBetween(startTemplate, endTemplate, options);
+    }
+
+    @Override
+    public void delete(K key)
+    {
+        _deleteHelper.delete(key);
+    }
+
+    @Override
+    public void mdelete(Collection<K> keys)
+    {
+        _deleteHelper.mdelete(keys);
     }
 }

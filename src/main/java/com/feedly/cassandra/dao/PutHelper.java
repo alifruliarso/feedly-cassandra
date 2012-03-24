@@ -25,7 +25,7 @@ import com.feedly.cassandra.entity.IndexMetadata;
 import com.feedly.cassandra.entity.PropertyMetadata;
 import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 
-public class PutHelper<K, V> extends BaseDaoHelper<K, V>
+class PutHelper<K, V> extends DaoHelperBase<K, V>
 {
     private static final LongSerializer SER_LONG = LongSerializer.get();
 

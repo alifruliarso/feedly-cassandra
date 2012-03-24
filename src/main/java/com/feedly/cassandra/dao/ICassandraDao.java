@@ -143,4 +143,19 @@ public interface ICassandraDao<K, V>
      * unless the result size is known to be relatively small.
      */
     public Collection<V> mfindBetween(V startTemplate, V endTemplate, FindBetweenOptions options); 
+    
+    
+    /**
+     * Delete an entity.
+     * @param key the key of the entity to delete.
+     */
+    public void delete(K key);
+    
+    /**
+     * Delete multiple entities. This is functionally equivalent to {@link #delete(Object)}, the
+     *  main difference will be improved performance by batching the deletes.
+     *  
+     * @param keys the keys of the entities to delete.
+     */
+    public void mdelete(Collection<K> keys);
 }

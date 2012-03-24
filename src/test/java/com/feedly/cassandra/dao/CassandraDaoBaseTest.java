@@ -3,6 +3,7 @@ package com.feedly.cassandra.dao;
 import static org.junit.Assert.*;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
@@ -217,6 +218,76 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         assertBean("dirty test", bean0, query.execute().get());
     }
 
+    @Test
+    public void testDelete()
+    {
+        int numBeans = 5;
+        List<SampleBean> beans = new ArrayList<SampleBean>();
+        
+        for(int i = 0; i < numBeans; i++)
+        {
+            SampleBean bean = new SampleBean();
+            bean.setRowKey(new Long(i));
+            bean.setBoolVal(i%2 == 0);
+            bean.setCharVal((char) ('a' + i));
+            bean.setDateVal(new Date(System.currentTimeMillis() + 60000*i));
+            bean.setDoubleVal(i * .1);
+            bean.setFloatVal(i / .5f);
+            bean.setIntVal(i);
+            bean.setLongVal(-i);
+            bean.setStrVal("str-" + i);
+            bean.setUnmapped(new HashMap<String, Object>());
+            for(int j = 0; j <= i; j++)
+                bean.getUnmapped().put("unmapped-" + j, j);
+            beans.add(bean);
+        }
+        
+        for(SampleBean bean : beans)
+        {
+            _dao.put(bean);
+        }
+        
+        SampleBean bean0 = beans.get(0);
+        _dao.delete(bean0.getRowKey());
+
+        for(int i = 0; i < numBeans; i++)
+        {
+            SampleBean bean = beans.get(i);
+            SliceQuery<Long,String,byte[]> query = HFactory.createSliceQuery(keyspace, LongSerializer.get(), AsciiSerializer.get(), BytesArraySerializer.get());
+            query.setKey(bean.getRowKey());
+            query.setColumnFamily("sample");
+            query.setRange("", "", false, 100);
+            ColumnSlice<String, byte[]> columnSlice = query.execute().get();
+            
+            if(i == 0)
+            {
+                assertEquals(0, columnSlice.getColumns().size()); //"tombstone" row still exists
+                assertNull(_dao.get(bean0.getRowKey()));
+            }
+            else
+                assertBean("beans[" + bean.getIntVal() + "]", bean, columnSlice);
+        }
+        
+        _dao.mdelete(Arrays.asList(beans.get(1).getRowKey(), beans.get(2).getRowKey()));
+        for(int i = 0; i < numBeans; i++)
+        {
+            SampleBean bean = beans.get(i);
+            SliceQuery<Long,String,byte[]> query = HFactory.createSliceQuery(keyspace, LongSerializer.get(), AsciiSerializer.get(), BytesArraySerializer.get());
+            query.setKey(bean.getRowKey());
+            query.setColumnFamily("sample");
+            query.setRange("", "", false, 100);
+            ColumnSlice<String, byte[]> columnSlice = query.execute().get();
+            
+            if(i < 3)
+            {
+                assertEquals(0, columnSlice.getColumns().size()); //"tombstone" row still exists
+                assertNull(_dao.get(bean0.getRowKey()));
+            }
+            else
+                assertBean("beans[" + bean.getIntVal() + "]", bean, columnSlice);
+        }
+        
+    }
 
     
     @Test

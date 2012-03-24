@@ -27,7 +27,7 @@ import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.PropertyMetadata;
 import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 
-abstract class LoadHelper<K,V> extends BaseDaoHelper<K, V>
+abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
 {
 
     LoadHelper(EntityMetadata<V> meta, IKeyspaceFactory factory)

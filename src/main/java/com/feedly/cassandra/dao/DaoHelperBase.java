@@ -20,7 +20,7 @@ import com.feedly.cassandra.entity.PropertyMetadata;
 import com.feedly.cassandra.entity.enhance.ColumnFamilyTransformTask;
 import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 
-abstract class BaseDaoHelper<K,V>
+abstract class DaoHelperBase<K,V>
 {
     protected final Logger _logger = LoggerFactory.getLogger(getClass().getName());
 
@@ -31,7 +31,7 @@ abstract class BaseDaoHelper<K,V>
     protected final EntityMetadata<V> _entityMeta;
     protected IKeyspaceFactory _keyspaceFactory;
 
-    BaseDaoHelper(EntityMetadata<V> meta, IKeyspaceFactory factory)
+    DaoHelperBase(EntityMetadata<V> meta, IKeyspaceFactory factory)
     {
         _entityMeta = meta;
         _keyspaceFactory = factory;

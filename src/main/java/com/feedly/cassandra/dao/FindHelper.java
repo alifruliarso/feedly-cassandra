@@ -15,7 +15,7 @@ import com.feedly.cassandra.entity.PropertyMetadata;
  * helper class to do finds (reads by index).
  */
 @SuppressWarnings("unchecked")
-public class FindHelper<K, V> extends LoadHelper<K, V>
+class FindHelper<K, V> extends LoadHelper<K, V>
 {
     private final HashIndexFindHelper<K, V> _hashIndexFinder;
     private final RangeIndexFindHelper<K, V> _rangeIndexFinder;
