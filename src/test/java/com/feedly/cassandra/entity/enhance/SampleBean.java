@@ -40,7 +40,10 @@ public class SampleBean implements Cloneable, Comparable<SampleBean>
 
     @Column
     private Date dateVal;
-    
+
+    @Column
+    private ESampleEnum sampleEnum;
+
     private int notSaved; //transient
     
     @UnmappedColumnHandler
@@ -198,5 +201,15 @@ public class SampleBean implements Cloneable, Comparable<SampleBean>
         clone.dateVal = (Date) dateVal.clone();
                
         return clone;
+    }
+
+    public ESampleEnum getSampleEnum()
+    {
+        return sampleEnum;
+    }
+
+    public void setSampleEnum(ESampleEnum sampleEnum)
+    {
+        this.sampleEnum = sampleEnum;
     }
 }

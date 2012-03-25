@@ -47,7 +47,7 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
     protected V loadValueProperties(K key, V value, PropertyMetadata keyMeta, List<HColumn<byte[], byte[]>> columns)
     {
         if(columns.isEmpty())
-            return null;
+            return value;
 
         try
         {
@@ -260,10 +260,11 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
                     query = buildSliceQuery(keyBytes);
 
                 firstCol = columns.get(CassandraDaoBase.COL_RANGE_SIZE - 1).getName();
-                firstCol[firstCol.length-1]++; //next batch starts right after the current batch
                 
                 query.setRange(firstCol, rangeEnd, false, CassandraDaoBase.COL_RANGE_SIZE);
                 columns = query.execute().get().getColumns();
+                
+                columns = columns.subList(1, columns.size()); //boundaries are inclusive, exclude previously processed column
             }
         }
         return value;

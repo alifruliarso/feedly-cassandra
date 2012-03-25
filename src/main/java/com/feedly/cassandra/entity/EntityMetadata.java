@@ -328,7 +328,7 @@ public class EntityMetadata<V>
         }
         catch(NoSuchMethodException ex)
         {
-            _logger.trace("no setter  ", new Object[] { name, "(", prop.getType().getSimpleName(), "). excluding"});
+            _logger.trace("no setter {} ({}). excluding", name, prop.getType().getSimpleName());
             
             return null;
         }
@@ -351,7 +351,7 @@ public class EntityMetadata<V>
         }
         catch(NoSuchMethodException ex)
         {
-            _logger.trace("no setter  ", new Object[] {name, "(", prop.getType().getSimpleName(), "). excluding"});
+            _logger.trace("no getter {}({}). excluding", name, prop.getType().getSimpleName());
             
             return null;
         }

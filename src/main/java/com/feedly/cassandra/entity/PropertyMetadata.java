@@ -34,6 +34,7 @@ public class PropertyMetadata implements Comparable<PropertyMetadata>
     private final Serializer<?> _serializer;
     private final boolean _isCollection;
     
+    @SuppressWarnings("unchecked")
     public PropertyMetadata(Field field,
                             String physicalName,
                             Method getter,
@@ -84,6 +85,8 @@ public class PropertyMetadata implements Comparable<PropertyMetadata>
             _serializer = getSerializerInstance(serializerClass);
         else if(_fieldClass.equals(Map.class) || _fieldClass.equals(List.class) || _fieldClass.equals(SortedMap.class))
             _serializer = ByteIndicatorSerializer.get();
+        else if(_fieldClass.isEnum())
+            _serializer = new EnumSerializer((Class<? extends Enum<?>>) _fieldClass);
         else
             _serializer = EntityUtils.getSerializer(_fieldClass);
 

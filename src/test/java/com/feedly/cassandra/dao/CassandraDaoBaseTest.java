@@ -20,6 +20,7 @@ import me.prettyprint.cassandra.serializers.AsciiSerializer;
 import me.prettyprint.cassandra.serializers.BytesArraySerializer;
 import me.prettyprint.cassandra.serializers.DynamicCompositeSerializer;
 import me.prettyprint.cassandra.serializers.LongSerializer;
+import me.prettyprint.cassandra.serializers.StringSerializer;
 import me.prettyprint.hector.api.beans.ColumnSlice;
 import me.prettyprint.hector.api.beans.DynamicComposite;
 import me.prettyprint.hector.api.beans.HColumn;
@@ -35,9 +36,11 @@ import com.feedly.cassandra.PersistenceManager;
 import com.feedly.cassandra.entity.ByteIndicatorSerializer;
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.EntityUtils;
+import com.feedly.cassandra.entity.EnumSerializer;
 import com.feedly.cassandra.entity.IndexMetadata;
 import com.feedly.cassandra.entity.TestPartitioner;
 import com.feedly.cassandra.entity.enhance.CompositeIndexedBean;
+import com.feedly.cassandra.entity.enhance.ESampleEnum;
 import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 import com.feedly.cassandra.entity.enhance.IndexedBean;
 import com.feedly.cassandra.entity.enhance.ListBean;
@@ -100,7 +103,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
     
     private void assertBean(String msg, SampleBean bean, ColumnSlice<String, byte[]> columnSlice)
     {
-        assertEquals(msg, 8 + (bean.getUnmapped() == null ? 0 : bean.getUnmapped().size()), columnSlice.getColumns().size());
+        assertEquals(msg, 9 + (bean.getUnmapped() == null ? 0 : bean.getUnmapped().size()), columnSlice.getColumns().size());
         
         for(HColumn<String, byte[]> col : columnSlice.getColumns())
         {
@@ -121,6 +124,12 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
                 assertColumn(msg, bean.getLongVal(), false, col);
             else if(n.equals("s"))
                 assertColumn(msg, bean.getStrVal(), false, col);
+            else if(n.equals("sampleEnum"))
+            {
+                byte[] value = col.getValue(); 
+                assertEquals(msg, bean.getSampleEnum(), new EnumSerializer(ESampleEnum.class).fromBytes(value));
+                assertEquals(msg, bean.getSampleEnum().name(), StringSerializer.get().fromBytes(value));
+            }
             else
                 assertColumn(bean.getUnmapped().get(n), true, col);
         }
@@ -178,6 +187,8 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             bean.setLongVal(-i);
             bean.setStrVal("str-" + i);
             bean.setUnmapped(new HashMap<String, Object>());
+            bean.setSampleEnum(ESampleEnum.values()[i % ESampleEnum.values().length]);
+            
             for(int j = 0; j <= i; j++)
                 bean.getUnmapped().put("unmapped-" + j, j);
             beans.add(bean);
@@ -203,7 +214,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         bean0.setDoubleVal(100.0);
         bean0.setUnmapped((Map) Collections.singletonMap("unmapped-0", 100));
         IEnhancedEntity bean = (IEnhancedEntity) bean0;
-        bean.getModifiedFields().clear(7);
+        bean.getModifiedFields().clear(8);
         bean.setUnmappedFieldsModified(false);
         
         _dao.put(bean0);
@@ -236,6 +247,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             bean.setIntVal(i);
             bean.setLongVal(-i);
             bean.setStrVal("str-" + i);
+            bean.setSampleEnum(ESampleEnum.VALUE1);
             bean.setUnmapped(new HashMap<String, Object>());
             for(int j = 0; j <= i; j++)
                 bean.getUnmapped().put("unmapped-" + j, j);
@@ -443,6 +455,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             bean.setIntVal(i);
             bean.setLongVal(-i);
             bean.setStrVal("str-" + i);
+            bean.setSampleEnum(ESampleEnum.values()[i % ESampleEnum.values().length]);
             
             bean.setUnmapped(new HashMap<String, Object>());
             for(int j = 0; j <= 100; j++)
@@ -504,11 +517,12 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             bean.setIntVal(i);
             bean.setLongVal(-i);
             bean.setStrVal("str-" + i);
-            
+            bean.setSampleEnum(ESampleEnum.values()[i % ESampleEnum.values().length]);
+
             beans.add(bean);
             keys.add(beans.get(i).getRowKey());
             
-            bean.setUnmapped(new HashMap<String, Object>());
+            bean.setUnmapped(new TreeMap<String, Object>());
             for(int j = 0; j <= 100; j++)
                 bean.getUnmapped().put("unmapped-" + j, "val-" + i + "-" + j);
         }
@@ -525,9 +539,13 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         for(int i = beans.size() - 1; i >= 0; i--)
         {
             SampleBean loaded = actual.get(i);
+            assertTrue(((IEnhancedEntity) loaded).getModifiedFields().isEmpty());
+
+            if(loaded.getUnmapped() != null)
+                loaded.setUnmapped(new TreeMap<String, Object>(loaded.getUnmapped()));
+            
             assertEquals("bean[" + i + "]", beans.get(i), loaded);
 
-            assertTrue(((IEnhancedEntity) loaded).getModifiedFields().isEmpty());
         }
     }
 
@@ -550,11 +568,12 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             bean.setIntVal(i);
             bean.setLongVal(-i);
             bean.setStrVal("str-" + i);
-            
+            bean.setSampleEnum(ESampleEnum.values()[i % ESampleEnum.values().length]);
+
             beans.add(bean);
             keys.add(beans.get(i).getRowKey());
             
-            bean.setUnmapped(new HashMap<String, Object>());
+            bean.setUnmapped(new TreeMap<String, Object>());
             for(int j = 0; j <= 100; j++)
                 bean.getUnmapped().put("unmapped-" + j, "val-" + i + "-" + j);
         }
