@@ -1,11 +1,13 @@
 package com.feedly.cassandra.entity;
 
+import java.io.Serializable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.BitSet;
 
 import me.prettyprint.cassandra.serializers.CharSerializer;
+import me.prettyprint.cassandra.serializers.ObjectSerializer;
 import me.prettyprint.cassandra.serializers.SerializerTypeInferer;
 import me.prettyprint.hector.api.Serializer;
 
@@ -108,6 +110,8 @@ public class EntityUtils
         Serializer<?> s = SerializerTypeInferer.getSerializer(type);
         if(s == null && type.equals(char.class))
             s = CharSerializer.get();
+        if(s == null && (type.equals(Serializable.class) || type.isEnum()))
+            return ObjectSerializer.get();
         
         return s;
     }

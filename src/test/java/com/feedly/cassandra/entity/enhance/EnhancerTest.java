@@ -31,7 +31,8 @@ public class EnhancerTest
          * 4 floatVal
          * 5 intVal
          * 6 longVal
-         * 7 strVal
+         * 7 sampleEnum
+         * 8 strVal
          * 
          * also not saved val is not saved
          */
@@ -47,13 +48,13 @@ public class EnhancerTest
         bean.setStrVal(null);
         assertEquals(2, enh.getModifiedFields().cardinality()); 
         assertEquals(true, enh.getModifiedFields().get(5)); 
-        assertEquals(true, enh.getModifiedFields().get(7)); 
+        assertEquals(true, enh.getModifiedFields().get(8)); 
         assertNull(bean.getStrVal());
         
         bean.setStrVal("bar");
         assertEquals(2, enh.getModifiedFields().cardinality()); 
         assertEquals(true, enh.getModifiedFields().get(5)); 
-        assertEquals(true, enh.getModifiedFields().get(7)); 
+        assertEquals(true, enh.getModifiedFields().get(8)); 
         assertEquals("bar", bean.getStrVal());
 
         //test anonymous handlers

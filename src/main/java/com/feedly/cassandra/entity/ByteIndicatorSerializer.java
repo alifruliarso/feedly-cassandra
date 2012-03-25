@@ -1,5 +1,6 @@
 package com.feedly.cassandra.entity;
 
+import java.io.Serializable;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.util.Collections;
@@ -38,6 +39,7 @@ public class ByteIndicatorSerializer extends AbstractSerializer<Object>
         bytes.put(Short.class, val++);
         bytes.put(String.class, val++);
         bytes.put(UUID.class, val++);
+        bytes.put(Serializable.class, val++);
         
         for(Entry<Class<?>, Byte> e : bytes.entrySet())
             bytesRev.put(e.getValue(), e.getKey());
@@ -60,6 +62,9 @@ public class ByteIndicatorSerializer extends AbstractSerializer<Object>
         
         Byte indicator = INDICATOR_BYTES.get(obj.getClass()); //what type is the value?
 
+        if(indicator == null && obj instanceof Serializable)
+            indicator = INDICATOR_BYTES.get(Serializable.class);
+        
         if(indicator == null)
             throw new IllegalArgumentException(obj.getClass() + " not serializable by this class");
         
