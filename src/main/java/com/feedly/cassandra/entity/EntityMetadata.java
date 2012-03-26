@@ -328,7 +328,8 @@ public class EntityMetadata<V>
         }
         catch(NoSuchMethodException ex)
         {
-            _logger.trace("no setter {} ({}). excluding", name, prop.getType().getSimpleName());
+            if(!prop.getName().startsWith("__"))
+                _logger.trace(prop.getName() + " no setter {} ({}). excluding", name, prop.getType().getSimpleName());
             
             return null;
         }
@@ -351,7 +352,8 @@ public class EntityMetadata<V>
         }
         catch(NoSuchMethodException ex)
         {
-            _logger.trace("no getter {}({}). excluding", name, prop.getType().getSimpleName());
+            if(!prop.getName().startsWith("__"))
+                _logger.trace(prop.getName() + "no getter {}({}). excluding", name, prop.getType().getSimpleName());
             
             return null;
         }

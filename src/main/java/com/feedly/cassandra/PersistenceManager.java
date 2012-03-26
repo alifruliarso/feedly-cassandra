@@ -246,12 +246,25 @@ public class PersistenceManager implements IKeyspaceFactory
             //check if existing column metadata is in sync
             for(ColumnDefinition colMeta : existing.getColumnMetadata())
             {
-                PropertyMetadata pm = meta.getPropertyByPhysicalName(StringSerializer.get().fromByteBuffer(colMeta.getName()));
+                String colName;
+                if(meta.useCompositeColumns())
+                {
+                    DynamicComposite col = DynamicComposite.fromByteBuffer(colMeta.getName());
+                    Object prop1 = col.get(0);
+                    if(prop1 instanceof String)
+                        colName = (String) prop1;
+                    else
+                        colName = null;
+                }
+                else
+                    colName = StringSerializer.get().fromByteBuffer(colMeta.getName());
+                
+                PropertyMetadata pm = meta.getPropertyByPhysicalName(colName);
                 if(pm != null)
                 {
                     boolean isHashIndexed = hashIndexedProps.remove(pm);
                     
-                    if(colMeta.getIndexType() != null && isHashIndexed)
+                    if(colMeta.getIndexType() != null && !isHashIndexed)
                         _logger.warn("{}.{} is indexed in cassandra, but not in the data model. manual intervention needed", 
                                      familyName, pm.getPhysicalName());
                     

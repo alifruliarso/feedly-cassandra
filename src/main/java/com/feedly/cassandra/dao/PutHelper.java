@@ -192,6 +192,8 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
         for(PropertyMetadata pm : idxMeta.getIndexedProperties())
         {
             Object pval = invokeGetter(pm, value);
+            if(pval == null)
+                return;
             propVals.add(pval);
             colName.add(pval);
         }

@@ -76,6 +76,24 @@ public class PersistenceManagerSchemaTest extends CassandraServiceTestBase
         pm.setPackagePrefixes(new String[] {IndexedBean.class.getPackage().getName()});
         pm.init();
         
+        assertHashIndexes();
+
+        /*
+         * rerun, make sure 
+         */
+        pm = new PersistenceManager();
+        configurePersistenceManager(pm);
+        
+        pm.setPackagePrefixes(new String[] {IndexedBean.class.getPackage().getName()});
+        pm.init();
+
+        assertHashIndexes();
+    }
+    
+    
+
+    private void assertHashIndexes()
+    {
         boolean foundIndexBean = false, foundCompositeIndexBean = false;
         for(ColumnFamilyDefinition cfdef : cluster.describeKeyspace(KEYSPACE).getCfDefs())
         {
