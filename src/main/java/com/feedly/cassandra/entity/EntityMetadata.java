@@ -52,6 +52,7 @@ public class EntityMetadata<V>
     private final String _idxFamilyName;
     private final List<IndexMetadata> _indexes;
     private final Map<PropertyMetadata, List<IndexMetadata>> _indexesByProp;
+    private final Map<PropertyMetadata, Integer> _propPositions;
     
     static final Set<Class<?>> ALLOWED_TYPES;
 
@@ -219,6 +220,12 @@ public class EntityMetadata<V>
         Collections.sort(sorted);
         _props = Collections.unmodifiableList(sorted);
         
+        Map<PropertyMetadata, Integer> positions = new HashMap<PropertyMetadata, Integer>();
+        for(int i = sorted.size() - 1; i >=0; i--)
+            positions.put(sorted.get(i), i);
+        
+        _propPositions = Collections.unmodifiableMap(positions);
+        
         /*
          * now include indexes declared at the class level. Usually these are indexes that are on multiple columns
          */
@@ -369,6 +376,11 @@ public class EntityMetadata<V>
         return _propsByName.get(name);
     }
 
+    public int getPropertyPosition(PropertyMetadata pm)
+    {
+        return _propPositions.get(pm);
+    }
+    
     public PropertyMetadata getPropertyByPhysicalName(String pname)
     {
         return _propsByPhysicalName.get(pname);

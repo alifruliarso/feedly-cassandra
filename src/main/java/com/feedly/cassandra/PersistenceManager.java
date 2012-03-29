@@ -375,48 +375,6 @@ public class PersistenceManager implements IKeyspaceFactory
         def.setCompressionOptions(opts);
     }
     
-//    private void syncRangeIndexTables(String cfName, PropertyMetadata pm, KeyspaceDefinition keyspaceDef)
-//    {
-//        IndexMetadata im = pm.getIndexMetadata();
-//        
-//        boolean idxExists = false, idxLogExists = false;
-//        for(ColumnFamilyDefinition existing : keyspaceDef.getCfDefs())
-//        {
-//            if(existing.getName().equals(im.getIndexFamilyName()))
-//                idxExists = true;
-//            if(existing.getName().equals(im.getLogFamilyName()))
-//                idxLogExists = true;
-//        }
-//        
-//        //assume if the tables exist, they are created correctly
-//        if(!idxExists && isRangeIndexed(pm))
-//        {
-//            ColumnFamilyDefinition cfDef = new BasicColumnFamilyDefinition(HFactory.createColumnFamilyDefinition(_keyspace, im.getIndexFamilyName()));
-//            _logger.info("{}: create index column family {}", cfName, im.getIndexFamilyName());
-//            cfDef.setComparatorType(ComparatorType.DYNAMICCOMPOSITETYPE);
-//            cfDef.setComparatorTypeAlias(DynamicComposite.DEFAULT_DYNAMIC_COMPOSITE_ALIASES);
-//            addCompressionOptions(cfDef);
-//            _cluster.addColumnFamily(cfDef, true);
-//        }
-//        else if(idxExists && !isRangeIndexed(pm))
-//            _logger.warn("{}: range index table {} exists, but no range index is defined. index table may be safely dropped.", 
-//                         cfName, im.getIndexFamilyName());
-//        
-//        if(!idxLogExists && isRangeIndexed(pm))
-//        {
-//            ColumnFamilyDefinition cfDef = new BasicColumnFamilyDefinition(HFactory.createColumnFamilyDefinition(_keyspace, im.getLogFamilyName()));
-//            _logger.info("{}: create index log column family {}", cfName, im.getLogFamilyName());
-//            cfDef.setComparatorType(ComparatorType.DYNAMICCOMPOSITETYPE);
-//            cfDef.setComparatorTypeAlias(DynamicComposite.DEFAULT_DYNAMIC_COMPOSITE_ALIASES);
-//            addCompressionOptions(cfDef);
-//            _cluster.addColumnFamily(cfDef, true);
-//        }
-//        else if(idxLogExists && !isRangeIndexed(pm))
-//            _logger.warn("{}: range index log table {} exists, but no range index is defined. index table may be safely dropped.", 
-//                         cfName, im.getLogFamilyName());
-//
-//    }
-
     private BasicColumnDefinition createColDef(EntityMetadata<?> meta, String familyName, PropertyMetadata pm)
     {
         BasicColumnDefinition colDef = new BasicColumnDefinition();
@@ -448,4 +406,5 @@ public class PersistenceManager implements IKeyspaceFactory
         
         return null;
     }
+
 }

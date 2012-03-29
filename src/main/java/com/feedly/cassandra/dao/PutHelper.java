@@ -165,7 +165,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                     {
                         if(idxMeta.getType() == EIndexType.RANGE && affectedIndexes.add(idxMeta))
                         {
-                            addIndexWrite(key, value, idxMeta, clock, mutator);
+                            addIndexWrite(key, value, dirty, idxMeta, clock, mutator);
                             rv[1]++;
                         }
                     }
@@ -185,18 +185,35 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
      * column:    index value:rowkey
      * value:     meaningless
      */
-    private void addIndexWrite(Object key, V value, IndexMetadata idxMeta, long clock, Mutator<byte[]> mutator)
+    private void addIndexWrite(Object key, V value, BitSet dirty, IndexMetadata idxMeta, long clock, Mutator<byte[]> mutator)
     {
-        List<Object> propVals = new ArrayList<Object>(idxMeta.getIndexedProperties().size());
+        List<Object> propVals = null;
         DynamicComposite colName = new DynamicComposite();
+        boolean propertyNotSet = false;
         for(PropertyMetadata pm : idxMeta.getIndexedProperties())
         {
             Object pval = invokeGetter(pm, value);
-            if(pval == null)
-                return;
-            propVals.add(pval);
-            colName.add(pval);
+            if(pval != null)
+            {
+                if(propVals == null)
+                    propVals = new ArrayList<Object>(idxMeta.getIndexedProperties().size());
+                
+                propVals.add(pval);
+                colName.add(pval);
+            }
+            else if(!dirty.get(_entityMeta.getPropertyPosition(pm))) //prop value is null and not set
+                propertyNotSet = true;
         }
+
+        if(propVals == null) //no index property updated
+            return;
+        
+        if(propertyNotSet) //must update none or all of a multi column index
+            throw new IllegalArgumentException("cannot write a subset of columns to multi-column index: " + idxMeta);
+        
+        if(propVals.size() < idxMeta.getIndexedProperties().size()) //some index properties set to null -> entry is removed from index
+            return;
+        
         colName.add(key);
         
         HColumn<DynamicComposite, byte[]> column = HFactory.createColumn(colName, IDX_COL_VAL, clock, SER_COMPOSITE, SER_BYTES);

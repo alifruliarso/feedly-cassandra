@@ -1149,6 +1149,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             idxBean.setIntVal2(i/2);
             idxBean.setLongVal(i/10L);
             idxBean.setStrVal("strval");
+            idxBean.setStrVal2(null);
             
             idxBeans.add(idxBean);
 
@@ -1264,6 +1265,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             idxBean.setIntVal(i/10);
             idxBean.setLongVal((long) i);
             idxBean.setStrVal("strval");
+            idxBean.setStrVal2(null);
             
             idxBeans.add(idxBean);
 
@@ -1420,7 +1422,8 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             idxBean.setIntVal(i/10);
             idxBean.setLongVal((long) i);
             idxBean.setStrVal("strval");
-            
+            idxBean.setStrVal2(null);
+
             idxBeans.add(idxBean);
             
             CompositeIndexedBean cIdxBean = new CompositeIndexedBean();
@@ -1537,7 +1540,8 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             idxBean.setIntVal2(i);
             idxBean.setLongVal(i/10L);
             idxBean.setStrVal("strval");
-            
+            idxBean.setStrVal2(null);
+
             idxBeans.add(idxBean);
 
             CompositeIndexedBean cIdxBean = new CompositeIndexedBean();
@@ -1583,7 +1587,10 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         
         int idx = 50;
         for(IndexedBean bean : idxBeans.subList(50, 55))
+        {
+            bean.setStrVal2(null);
             bean.setLongVal(idx++ % 2 == 0 ? -1L : null);
+        }
         
         _indexedDao.mput(idxBeans.subList(50, 55));
         idxTmpl = new IndexedBean();
@@ -1678,6 +1685,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             idxBean.setIntVal(i);
             idxBean.setLongVal((long) Math.min(i/CassandraDaoBase.COL_RANGE_SIZE, 2));
             idxBean.setStrVal("strval");
+            idxBean.setStrVal2(null);
 
             idxBeans.add(idxBean);
 
@@ -1729,6 +1737,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             idxBean.setIntVal(i);
             idxBean.setLongVal(i/10L);
             idxBean.setStrVal("strval");
+            idxBean.setStrVal2(null);
 
             idxBeans.add(idxBean);
         }
@@ -1912,91 +1921,44 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         TestPartitioner.partitionHistory().clear();
     }
 
-    
-    private void testRangeFind(PartitionIndexBeanDao dao, 
-                               List<PartitionedIndexBean> beans, 
-                               PartitionedIndexBean template, 
-                               int batchSize,
-                               Integer maxRows)
+    //for entities with multi-column indexes, when writing a value to indexes, all indexed values must be specified, otherwise the index
+    //becomes inconsistent
+    @Test
+    public void testMultiColumnIndexPut()
     {
-        dao.mput(beans.subList(0, batchSize));
-        FindOptions options = new FindOptions();
-        if(maxRows != null)
-            options.setMaxRows(maxRows);
-        
-        List<PartitionedIndexBean> actuals = new ArrayList<PartitionedIndexBean>(dao.mfind(template, options));
-
-        if(maxRows == null)
+        List<IndexedBean> beans = new ArrayList<IndexedBean>();
+        for(long i = 0; i < 10; i++)
         {
-            Collections.sort(actuals);
-            List<PartitionedIndexBean> expected = beans.subList(0, maxRows != null ? maxRows : batchSize); 
-            assertBeansEqual(expected, actuals);
+            IndexedBean bean = new IndexedBean();
+            bean.setRowKey(i);
+            bean.setStrVal(null);
+            bean.setStrVal2("sval2");
+            bean.setLongVal(i);
+            beans.add(bean);
         }
-        else
+        
+        _indexedDao.mput(beans);
+        
+        IndexedBean expected = beans.get(5);
+        IndexedBean template = new IndexedBean();
+        template.setStrVal2(expected.getStrVal2());
+        template.setLongVal(expected.getLongVal());
+        
+        
+        assertEquals(expected, _indexedDao.find(template));
+        
+        IndexedBean update = new IndexedBean();
+        update.setRowKey(expected.getRowKey());
+        update.setLongVal(expected.getLongVal()*5);
+
+        try
         {
-            //can't guarantee what rows will com back, ensure the full amount came back and each row is unique
-            assertEquals(maxRows, actuals.size());
-            
-            Set<Integer> indexes = new HashSet<Integer>();
-            for(PartitionedIndexBean bean : actuals)
-            {
-                boolean found = false;
-                for(int i = beans.size() - 1; i >= 0; i--)
-                {
-                    if(bean.equals(beans.get(i)))
-                    {
-                        found = true;
-                        assertTrue(bean.toString(), indexes.add(i));
-                    }
-                    
-                }
-                
-                assertTrue(bean.toString(), found);
-            }
+            _indexedDao.put(update);
+            fail("partial index put should result in exception");
         }
-    }
-
-    private void testRangeFindBetween(PartitionIndexBeanDao dao, List<PartitionedIndexBean> idxBeans, long startVal, long endVal, EFindOrder order, int maxRows)
-    {
-        FindBetweenOptions options = new FindBetweenOptions();
-        options.setMaxRows(maxRows);
-        options.setRowOrder(order);
-        
-        PartitionedIndexBean startTmpl = new PartitionedIndexBean();
-        PartitionedIndexBean endTmpl = new PartitionedIndexBean();
-
-        startTmpl.setPartitionedValue(startVal);
-        endTmpl.setPartitionedValue(endVal);
-        
-        ArrayList<PartitionedIndexBean> actuals = new ArrayList<PartitionedIndexBean>(dao.mfindBetween(startTmpl, endTmpl, options));
-        Set<Long> ids = new HashSet<Long>();
-
-        
-        if(order == EFindOrder.ASCENDING)
+        catch(IllegalArgumentException ex)
         {
-            for(int i = 0; i < actuals.size(); i++)
-            {
-                long idxVal = startVal + i/10;
-                PartitionedIndexBean actual = actuals.get(i);
-                long key = actual.getRowKey();
-                long pval = actual.getPartitionedValue();
-                assertTrue("duplicate rowKey" + key, ids.add(key));
-                assertEquals("key " + key, pval, key/10);
-                assertEquals("val " + pval, idxVal, pval);
-            }
-        }
-        else if(order == EFindOrder.DESCENDING)
-        {
-            for(int i = actuals.size() - 1; i >= 0; i--)
-            {
-                long idxVal = endVal - i/10;
-                PartitionedIndexBean actual = actuals.get(i);
-                long key = actual.getRowKey();
-                long pval = actual.getPartitionedValue();
-                assertTrue("duplicate rowKey" + key, ids.add(key));
-                assertEquals("key " + key, pval, key/10);
-                assertEquals("val " + pval, idxVal, pval);
-            }
+            //success
         }
     }
     
@@ -2132,6 +2094,93 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         
         assertEquals(280, actuals.size());
     }  
+    
+    private void testRangeFind(PartitionIndexBeanDao dao, 
+                               List<PartitionedIndexBean> beans, 
+                               PartitionedIndexBean template, 
+                               int batchSize,
+                               Integer maxRows)
+    {
+        dao.mput(beans.subList(0, batchSize));
+        FindOptions options = new FindOptions();
+        if(maxRows != null)
+            options.setMaxRows(maxRows);
+        
+        List<PartitionedIndexBean> actuals = new ArrayList<PartitionedIndexBean>(dao.mfind(template, options));
+
+        if(maxRows == null)
+        {
+            Collections.sort(actuals);
+            List<PartitionedIndexBean> expected = beans.subList(0, maxRows != null ? maxRows : batchSize); 
+            assertBeansEqual(expected, actuals);
+        }
+        else
+        {
+            //can't guarantee what rows will com back, ensure the full amount came back and each row is unique
+            assertEquals(maxRows, actuals.size());
+            
+            Set<Integer> indexes = new HashSet<Integer>();
+            for(PartitionedIndexBean bean : actuals)
+            {
+                boolean found = false;
+                for(int i = beans.size() - 1; i >= 0; i--)
+                {
+                    if(bean.equals(beans.get(i)))
+                    {
+                        found = true;
+                        assertTrue(bean.toString(), indexes.add(i));
+                    }
+                    
+                }
+                
+                assertTrue(bean.toString(), found);
+            }
+        }
+    }
+
+    private void testRangeFindBetween(PartitionIndexBeanDao dao, List<PartitionedIndexBean> idxBeans, long startVal, long endVal, EFindOrder order, int maxRows)
+    {
+        FindBetweenOptions options = new FindBetweenOptions();
+        options.setMaxRows(maxRows);
+        options.setRowOrder(order);
+        
+        PartitionedIndexBean startTmpl = new PartitionedIndexBean();
+        PartitionedIndexBean endTmpl = new PartitionedIndexBean();
+
+        startTmpl.setPartitionedValue(startVal);
+        endTmpl.setPartitionedValue(endVal);
+        
+        ArrayList<PartitionedIndexBean> actuals = new ArrayList<PartitionedIndexBean>(dao.mfindBetween(startTmpl, endTmpl, options));
+        Set<Long> ids = new HashSet<Long>();
+
+        
+        if(order == EFindOrder.ASCENDING)
+        {
+            for(int i = 0; i < actuals.size(); i++)
+            {
+                long idxVal = startVal + i/10;
+                PartitionedIndexBean actual = actuals.get(i);
+                long key = actual.getRowKey();
+                long pval = actual.getPartitionedValue();
+                assertTrue("duplicate rowKey" + key, ids.add(key));
+                assertEquals("key " + key, pval, key/10);
+                assertEquals("val " + pval, idxVal, pval);
+            }
+        }
+        else if(order == EFindOrder.DESCENDING)
+        {
+            for(int i = actuals.size() - 1; i >= 0; i--)
+            {
+                long idxVal = endVal - i/10;
+                PartitionedIndexBean actual = actuals.get(i);
+                long key = actual.getRowKey();
+                long pval = actual.getPartitionedValue();
+                assertTrue("duplicate rowKey" + key, ids.add(key));
+                assertEquals("key " + key, pval, key/10);
+                assertEquals("val " + pval, idxVal, pval);
+            }
+        }
+    }
     
     
     private class RecordingStrategy implements IStaleIndexValueStrategy 

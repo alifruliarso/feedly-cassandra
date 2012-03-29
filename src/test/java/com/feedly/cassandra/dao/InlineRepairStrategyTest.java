@@ -57,6 +57,7 @@ public class InlineRepairStrategyTest extends CassandraServiceTestBase
             idxBean.setIntVal(i);
             idxBean.setLongVal(i/2L);
             idxBean.setStrVal("strval");
+            idxBean.setStrVal2(null);
             
             beans.add(idxBean);
         }
@@ -64,7 +65,10 @@ public class InlineRepairStrategyTest extends CassandraServiceTestBase
         _dao.mput(beans);
         
         for(IndexedBean bean : beans.subList(6, 12))
+        {
+            bean.setStrVal2(null);
             bean.setLongVal(-1L);
+        }
 
         _dao.mput(beans);
 
