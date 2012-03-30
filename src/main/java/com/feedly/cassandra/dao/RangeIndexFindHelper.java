@@ -409,24 +409,12 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
         return columns;
     }
     
-    private String debugCol(DynamicComposite col)
-    {
-        StringBuilder sb = new StringBuilder(col.get(0).toString()).append(" ");
-//        sb.append(col.get(1, DateSerializer.get()));
-//        for(int i = 2; i < col.size(); i++)
-//            sb.append(" ").append(col.get(i));
-//        
-        return sb.toString();
-    }
-    
     @SuppressWarnings("unchecked")
     private int fetchFromPartition(RangeIndexQueryResult<K> result,
                                    RangeIndexQueryPartitionResult p, 
                                    EFindOrder order,
                                    int pos)
     {
-        _logger.info("fetching from partition[{}], range {} to {}", new Object[] { p.getPartitionKey(), debugCol(p.getStartCol()), debugCol(p.getEndCol()) });
-        
         List<HColumn<DynamicComposite,byte[]>> columns = executeSliceQuery(p.getPartitionKey(), 
                                                                            p.getStartCol(), 
                                                                            p.getEndCol(), 
@@ -442,15 +430,12 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
                 values.add(new StaleIndexValue(p.getPartitionKey(), col.getName(), col.getClock()));
             }
 
-            _logger.info("fetched {} to {}", debugCol(columns.get(0).getName()), debugCol(columns.get(columns.size()-1).getName()));
 
             if(order == EFindOrder.DESCENDING)
             {
-                _logger.info("   orig partition: {} to {}", debugCol(p.getStartCol()), debugCol(p.getEndCol()));
                 DynamicComposite end = columns.get(columns.size() - 1).getName();
                 end.setEquality(ComponentEquality.LESS_THAN_EQUAL);
                 p.setEndCol(end);
-                _logger.info("updated partition: {} to {}", debugCol(p.getStartCol()), debugCol(p.getEndCol()));
             }
             else
             {
@@ -461,7 +446,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
 
             boolean hasMore = columns.size() == CassandraDaoBase.COL_RANGE_SIZE;
 
-            _logger.info("fetched {} keys from partition[{}] ({}), has more == {}", 
+            _logger.debug("fetched {} keys from partition[{}] ({}), has more == {}", 
                          new Object[] {columns.size(), pos, p.getPartitionKey(), hasMore});
 
             p.setHasMore(hasMore);

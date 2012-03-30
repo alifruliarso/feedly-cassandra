@@ -160,7 +160,7 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
         Object pval = pm.getSerializer().fromByteBuffer(col.getValueBytes());
         
         map.put(collectionKey, pval); 
-        _logger.debug("{}[{}].{}:{} = {}", new Object[] {_entityMeta.getType().getSimpleName(), key, pname, collectionKey, pval});
+        _logger.trace("{}[{}].{}:{} = {}", new Object[] {_entityMeta.getType().getSimpleName(), key, pname, collectionKey, pval});
     }
 
     private void loadListProperty(K key,
