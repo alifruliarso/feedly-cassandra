@@ -608,11 +608,11 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             bean.setStrProp("str-" + i);
             keys.add(bean.getRowkey());
             bean.setUnmapped(new HashMap<String, String>());
-            for(int j = 0; j <= 50; j++)
+            for(int j = 0; j <= 150; j++)
                 bean.getUnmapped().put("unmapped-" + j, "val-" + i + "-" + j);
 
             bean.setMapProp(new HashMap<String, Object>());
-            for(int j = 50; j <= 100; j++)
+            for(int j = 50; j <= 200; j++)
                 bean.getMapProp().put("propval-" + j, "val-" + i + "-" + j);
 
             beans.add(bean);
@@ -658,7 +658,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         //test null update
         for(int i = 50; i < 75; i++)
             bean0.getMapProp().put("propval-" + i, null);
-        assertEquals(51, bean0.getMapProp().size()); //sanity check we are overwriting properties to null
+        assertEquals(151, bean0.getMapProp().size()); //sanity check we are overwriting properties to null
         
         _mapDao.put(bean0);
 
@@ -2063,6 +2063,34 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             assertEquals(0, actual.getPartitionedValue());
         }
         assertEquals(300, actuals.size());
+
+        FindBetweenOptions betweenOptions = new FindBetweenOptions();
+        betweenOptions.setRowOrder(EFindOrder.ASCENDING);
+        actuals = dao.mfindBetween(idxTmpl, idxTmpl, betweenOptions);
+        keys = new HashSet<Long>();
+        for(PartitionedIndexBean actual : actuals)
+        {
+            long key = actual.getRowKey();
+            assertTrue("duplicate key " + key + " size " + keys.size(), keys.add(key));
+            assertTrue(key >= 0);
+            assertTrue(key < 300);
+            assertEquals(0, actual.getPartitionedValue());
+        }
+        assertEquals(300, actuals.size());
+
+        betweenOptions.setRowOrder(EFindOrder.DESCENDING);
+        actuals = dao.mfindBetween(idxTmpl, idxTmpl, betweenOptions);
+        keys = new HashSet<Long>();
+        for(PartitionedIndexBean actual : actuals)
+        {
+            long key = actual.getRowKey();
+            assertTrue("duplicate key " + key + " size " + keys.size(), keys.add(key));
+            assertTrue(key >= 0);
+            assertTrue(key < 300);
+            assertEquals(0, actual.getPartitionedValue());
+        }
+        assertEquals(300, actuals.size());
+        
 
         for(int i = 0; i < numBeans; i++)
         {

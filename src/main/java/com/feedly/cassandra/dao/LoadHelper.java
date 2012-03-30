@@ -252,14 +252,14 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
         {
             value = loadValueProperties(key, value, keyMeta, columns);
          
-            hasMore = columns.size() == CassandraDaoBase.COL_RANGE_SIZE;
+            hasMore = columns.size() >= CassandraDaoBase.COL_RANGE_SIZE - 1; 
             
             if(hasMore) //need to fetch more
             {
                 if(query == null)
                     query = buildSliceQuery(keyBytes);
 
-                firstCol = columns.get(CassandraDaoBase.COL_RANGE_SIZE - 1).getName();
+                firstCol = columns.get(columns.size() - 1).getName();
                 
                 query.setRange(firstCol, rangeEnd, false, CassandraDaoBase.COL_RANGE_SIZE);
                 columns = query.execute().get().getColumns();
