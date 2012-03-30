@@ -552,7 +552,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
     @Test
     public void testSimpleMgetAll()
     {
-        int numBeans = 105;
+        int numBeans = 201;
         List<SampleBean> beans = new ArrayList<SampleBean>();
         List<Long> keys = new ArrayList<Long>();
         

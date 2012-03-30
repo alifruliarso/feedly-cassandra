@@ -262,7 +262,7 @@ class GetHelper<K, V> extends LoadHelper<K, V>
             
             if(_currentIter.hasNext())
                 _next = _currentIter.next();
-            else if(_current.size() < CassandraDaoBase.ROW_RANGE_SIZE)
+            else if(_current.size() < CassandraDaoBase.ROW_RANGE_SIZE - 1) //minus one for key boundary overlap
             {
                 _current = null;
                 _currentIter = null;
