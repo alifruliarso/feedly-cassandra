@@ -21,7 +21,8 @@ import me.prettyprint.hector.api.query.SliceQuery;
 
 import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.entity.EntityMetadata;
-import com.feedly.cassandra.entity.PropertyMetadata;
+import com.feedly.cassandra.entity.PropertyMetadataBase;
+import com.feedly.cassandra.entity.SimplePropertyMetadata;
 
 /*
  * helper class to do gets (reads by row key).
@@ -56,13 +57,13 @@ class GetHelper<K, V> extends LoadHelper<K, V>
             throw new IllegalArgumentException("either includes or excludes should be specified, not both");
 
         List<byte[]> colNames = new ArrayList<byte[]>();
-        List<PropertyMetadata> fullCollectionProperties = derivePartialColumns(colNames, includes, excludes);
+        List<PropertyMetadataBase> fullCollectionProperties = derivePartialColumns(colNames, includes, excludes);
 
         value = loadFromGet(key, value, colNames, null, null);
 
         if(fullCollectionProperties != null)
         {
-            for(PropertyMetadata pm : fullCollectionProperties)
+            for(PropertyMetadataBase pm : fullCollectionProperties)
             {
                 DynamicComposite dc = new DynamicComposite();
                 dc.addComponent(0, pm.getName(), ComponentEquality.EQUAL);
@@ -118,7 +119,7 @@ class GetHelper<K, V> extends LoadHelper<K, V>
             throw new IllegalArgumentException("includes or excludes should be specified");
 
         List<byte[]> colNames = new ArrayList<byte[]>();
-        List<PropertyMetadata> fullCollectionProperties = derivePartialColumns(colNames, includes, excludes);
+        List<PropertyMetadataBase> fullCollectionProperties = derivePartialColumns(colNames, includes, excludes);
 
         values = bulkLoadFromMultiGet(keys, values, colNames, null, null, true);
 
@@ -130,7 +131,7 @@ class GetHelper<K, V> extends LoadHelper<K, V>
     {
         _logger.debug("loading {}[{}]", _entityMeta.getFamilyName(), key);
 
-        PropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
+        SimplePropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
         byte[] keyBytes = ((Serializer) keyMeta.getSerializer()).toBytes(key);
 
         SliceQuery<byte[], byte[], byte[]> query = buildSliceQuery(keyBytes);
@@ -148,7 +149,7 @@ class GetHelper<K, V> extends LoadHelper<K, V>
     private byte[] fetch(RangeSlicesQuery<byte[], byte[], byte[]> query, byte[] start, GetOptions options, List<V> values)
     {
         List<K> keys = null;
-        List<PropertyMetadata> fullCollectionProperties = null;
+        List<PropertyMetadataBase> fullCollectionProperties = null;
         values.clear();
         byte[] endCol = null;
         switch(options.getColumnFilterStrategy())
@@ -184,7 +185,7 @@ class GetHelper<K, V> extends LoadHelper<K, V>
         query.setKeys(start, null);
         QueryResult<OrderedRows<byte[],byte[],byte[]>> result = query.execute();
         
-        PropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
+        SimplePropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
         boolean checkStart = true;
         
         OrderedRows<byte[],byte[],byte[]> rows = result.get();

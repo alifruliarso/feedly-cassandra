@@ -6,7 +6,8 @@ import java.util.Map;
 
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.IndexMetadata;
-import com.feedly.cassandra.entity.PropertyMetadata;
+import com.feedly.cassandra.entity.PropertyMetadataBase;
+import com.feedly.cassandra.entity.SimplePropertyMetadata;
 import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 
 /**
@@ -19,8 +20,8 @@ import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 class RangeValueFilter<V> implements IValueFilter<V>
 {
     private final EntityMetadata<V> _entityMeta;
-    private final Map<PropertyMetadata, Object> _startProps = new HashMap<PropertyMetadata, Object>();
-    private final Map<PropertyMetadata, Object> _endProps = new HashMap<PropertyMetadata, Object>();
+    private final Map<PropertyMetadataBase, Object> _startProps = new HashMap<PropertyMetadataBase, Object>();
+    private final Map<PropertyMetadataBase, Object> _endProps = new HashMap<PropertyMetadataBase, Object>();
     
     public RangeValueFilter(EntityMetadata<V> meta, V startTemplate, V endTemplate, IndexMetadata idx)
     {
@@ -30,18 +31,18 @@ class RangeValueFilter<V> implements IValueFilter<V>
     }
 
     private void toMap(V template, 
-                       Map<PropertyMetadata, Object> props, 
+                       Map<PropertyMetadataBase, Object> props, 
                        IndexMetadata idx)
     {
         BitSet dirty = ((IEnhancedEntity)template).getModifiedFields();
         
         for(int i = dirty.nextSetBit (0); i>= 0; i = dirty.nextSetBit(i+1)) 
         {
-            PropertyMetadata p = _entityMeta.getProperties().get(i);
+            PropertyMetadataBase p = _entityMeta.getProperties().get(i);
             props.put(p, invokeGetter(p, template));
         }      
         
-        for(PropertyMetadata pm : idx.getIndexedProperties())
+        for(SimplePropertyMetadata pm : idx.getIndexedProperties())
             props.remove(pm);
     }
 
@@ -52,7 +53,7 @@ class RangeValueFilter<V> implements IValueFilter<V>
          * check current val is within range property by property
          */
         
-        for(Map.Entry<PropertyMetadata, Object> entry : _startProps.entrySet())
+        for(Map.Entry<PropertyMetadataBase, Object> entry : _startProps.entrySet())
         {
             Comparable tVal = (Comparable) entry.getValue();
             Comparable vVal = (Comparable) invokeGetter(entry.getKey(), value.getValue());
@@ -62,7 +63,7 @@ class RangeValueFilter<V> implements IValueFilter<V>
         }
         
         
-        for(Map.Entry<PropertyMetadata, Object> entry : _endProps.entrySet())
+        for(Map.Entry<PropertyMetadataBase, Object> entry : _endProps.entrySet())
         {
             Comparable tVal = (Comparable) entry.getValue();
             Comparable vVal = (Comparable) invokeGetter(entry.getKey(), value.getValue());
@@ -74,7 +75,7 @@ class RangeValueFilter<V> implements IValueFilter<V>
         return EFilterResult.PASS;
     }
     
-    protected Object invokeGetter(PropertyMetadata pm, V obj)
+    protected Object invokeGetter(PropertyMetadataBase pm, V obj)
     {
         try
         {

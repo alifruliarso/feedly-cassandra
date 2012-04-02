@@ -1,6 +1,5 @@
 package com.feedly.cassandra.dao;
 
-import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -8,9 +7,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.SortedMap;
 import java.util.TreeMap;
 
+import me.prettyprint.cassandra.serializers.BigIntegerSerializer;
 import me.prettyprint.hector.api.Serializer;
 import me.prettyprint.hector.api.beans.AbstractComposite.ComponentEquality;
 import me.prettyprint.hector.api.beans.ColumnSlice;
@@ -23,8 +22,13 @@ import me.prettyprint.hector.api.query.MultigetSliceQuery;
 import me.prettyprint.hector.api.query.SliceQuery;
 
 import com.feedly.cassandra.IKeyspaceFactory;
+import com.feedly.cassandra.entity.ByteIndicatorSerializer;
+import com.feedly.cassandra.entity.EPropertyType;
 import com.feedly.cassandra.entity.EntityMetadata;
-import com.feedly.cassandra.entity.PropertyMetadata;
+import com.feedly.cassandra.entity.ListPropertyMetadata;
+import com.feedly.cassandra.entity.MapPropertyMetadata;
+import com.feedly.cassandra.entity.PropertyMetadataBase;
+import com.feedly.cassandra.entity.SimplePropertyMetadata;
 import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 
 abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
@@ -44,7 +48,7 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
      * @return the entity
      */
     @SuppressWarnings("unchecked")
-    protected V loadValueProperties(K key, V value, PropertyMetadata keyMeta, List<HColumn<byte[], byte[]>> columns)
+    protected V loadValueProperties(K key, V value, SimplePropertyMetadata keyMeta, List<HColumn<byte[], byte[]>> columns)
     {
         if(columns.isEmpty())
             return value;
@@ -73,18 +77,16 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
         {
             HColumn<byte[], byte[]> col = columns.get(i);
             String pname = null;
-            Object collectionKey = null;
+            DynamicComposite collectionKey = null;
             if(_entityMeta.useCompositeColumns())
             {
-                DynamicComposite composite = SER_COMPOSITE.fromBytes(col.getName());
-                pname = (String) composite.get(0);
-                if(composite.size() > 1)
-                    collectionKey = composite.get(1);
+                collectionKey = SER_COMPOSITE.fromBytes(col.getName());
+                pname = (String) collectionKey.get(0);
             }
             else
                 pname = SER_STRING.fromBytes(col.getName());
             
-            PropertyMetadata pm = _entityMeta.getPropertyByPhysicalName(pname);
+            PropertyMetadataBase pm = _entityMeta.getPropertyByPhysicalName(pname);
 
             if(pm == null)
             {
@@ -92,13 +94,22 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
             }
             else
             {
-                if(collectionKey == null)
+                EPropertyType t = pm.getPropertyType();
+                if(t == EPropertyType.SIMPLE)
                 {
-                    loadSimpleProperty(key, value, col, pname, pm);
+                    loadSimpleProperty(key, value, col, pname, (SimplePropertyMetadata) pm);
                 }
                 else
                 {
-                    if(pm.getFieldType().equals(List.class))
+                    StringBuilder descriptor = null;
+                    if(_logger.isTraceEnabled())
+                    {
+                        descriptor = new StringBuilder();
+                        descriptor.append(_entityMeta.getType().getSimpleName());
+                        descriptor.append("[").append(key).append("]").append(".").append(pname);
+                        
+                    }
+                    if(pm.getPropertyType() == EPropertyType.LIST)
                     {
                         List<Object> l = (List<Object>) collections.get(pname);
                         if(l == null)
@@ -112,7 +123,7 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
                             }
                             collections.put(pname, l);
                         }
-                        loadListProperty(key, value, col, pname, l, collectionKey, pm);
+                        loadListProperty(descriptor, collectionKey, col.getValue(), l, 1, (ListPropertyMetadata) pm);
                     }
                     else
                     {
@@ -123,7 +134,7 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
                             
                             if(m == null)
                             {
-                                if(pm.getFieldType().equals(SortedMap.class))
+                                if(pm.getPropertyType() == EPropertyType.SORTED_MAP)
                                     m = new TreeMap<Object, Object>();
                                 else
                                     m = new HashMap<Object, Object>();
@@ -134,7 +145,7 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
                             collections.put(pname, m);
                         }
                         
-                        loadMapProperty(key, value, col, pname, m, collectionKey, pm);
+                        loadMapProperty(descriptor, collectionKey, col.getValue(), m, 1, (MapPropertyMetadata) pm);
                     }
                 }
             }
@@ -149,42 +160,100 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
         return value;
     }
 
-    private void loadMapProperty(K key,
-                                 V value,
-                                 HColumn<byte[], byte[]> col,
-                                 String pname,
+    @SuppressWarnings("unchecked")
+    private void loadMapProperty(StringBuilder descriptor, 
+                                 DynamicComposite colName,
+                                 byte[] colValue,
                                  Map<Object, Object> map,
-                                 Object collectionKey,
-                                 PropertyMetadata pm)
+                                 int colIdx,
+                                 MapPropertyMetadata pm)
     {
-        Object pval = pm.getSerializer().fromByteBuffer(col.getValueBytes());
+        SimplePropertyMetadata keyMeta = pm.getKeyPropertyMetadata();
+        PropertyMetadataBase valueMeta = pm.getValuePropertyMetadata();
+        Object key = colName.get(colIdx, keyMeta.getSerializer());
         
-        map.put(collectionKey, pval); 
-        _logger.trace("{}[{}].{}:{} = {}", new Object[] {_entityMeta.getType().getSimpleName(), key, pname, collectionKey, pval});
+        
+        EPropertyType t = valueMeta.getPropertyType();
+        if(t == EPropertyType.SIMPLE)
+        {
+            Object pval = ((SimplePropertyMetadata) valueMeta).getSerializer().fromBytes(colValue);
+
+            _logger.trace("{} = {}", descriptor, pval);
+            map.put(key, pval); 
+        }
+        else if(t == EPropertyType.LIST)
+        {
+            loadListProperty(descriptor, colName, colValue, colName, colIdx+1, (ListPropertyMetadata) valueMeta);
+        }
+        else if(t == EPropertyType.MAP || t == EPropertyType.SORTED_MAP)
+        {
+            if(descriptor != null)
+                descriptor.append(".").append(key);
+            
+            Map<Object, Object> subMap = (Map<Object, Object>) map.get(key);
+            if(subMap == null)
+            {
+                subMap = t == EPropertyType.MAP ? new HashMap<Object, Object>() : new TreeMap<Object, Object>();
+                map.put(key, subMap);
+            }
+            
+            loadMapProperty(descriptor, colName, colValue, subMap, colIdx+1, (MapPropertyMetadata) valueMeta);
+        }
     }
 
-    private void loadListProperty(K key,
-                                  V value,
-                                  HColumn<byte[], byte[]> col,
-                                  String pname,
+    @SuppressWarnings("unchecked")
+    private void loadListProperty(StringBuilder descriptor,
+                                  DynamicComposite colName,
+                                  byte[] colValue,
                                   List<Object> list,
-                                  Object collectionKey,
-                                  PropertyMetadata pm)
+                                  int colIdx,
+                                  ListPropertyMetadata pm)
     {
-        Object pval = pm.getSerializer().fromByteBuffer(col.getValueBytes());
-        
-        int idx = ((BigInteger) collectionKey).intValue();
+        PropertyMetadataBase elementMeta = pm.getElementPropertyMetadata();
+        int idx = colName.get(colIdx, BigIntegerSerializer.get()).intValue();
 
         //columns should be loaded in order, but when loading partial values, null padding may be needed
         for(int i = list.size(); i < idx; i++)
             list.add(null);
 
-        list.add(pval); 
+        EPropertyType t = elementMeta.getPropertyType();
+        if(t == EPropertyType.SIMPLE)
+        {
+            Object pval = ((SimplePropertyMetadata) elementMeta).getSerializer().fromBytes(colValue);
+
+            _logger.trace("{} = {}", descriptor, pval);
+            list.add(pval); 
+        }
+        else if(t == EPropertyType.LIST)
+        {
+            List<Object> sublist; 
+            if(list.size() >= idx)
+            {
+                sublist = (List<Object>) list.get(idx);
+                if(sublist == null)
+                {
+                    sublist = new ArrayList<Object>();
+                    list.set(idx, sublist);
+                }
+            }
+            else
+            {
+                sublist = new ArrayList<Object>();
+                list.add(sublist);
+            }
             
-        _logger.trace("{}[{}].{}:{} = {}", new Object[]{_entityMeta.getType().getSimpleName(), key, pname, collectionKey, pval});
+            if(descriptor != null)
+                descriptor.append("[").append(colIdx).append("]");
+            
+            loadListProperty(descriptor, colName, colValue, sublist, colIdx+1, (ListPropertyMetadata) elementMeta);
+        }
+        else if(t == EPropertyType.MAP || t == EPropertyType.SORTED_MAP)
+        {
+            
+        }
     }
 
-    private void loadSimpleProperty(K key, V value, HColumn<byte[], byte[]> col, String pname, PropertyMetadata pm)
+    private void loadSimpleProperty(K key, V value, HColumn<byte[], byte[]> col, String pname, SimplePropertyMetadata pm)
     {
         Object pval = pm.getSerializer().fromBytes(col.getValue());
         invokeSetter(pm, value, pval);
@@ -197,7 +266,7 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
                                                   HColumn<byte[], byte[]> col,
                                                   Map<Object, Object> unmapped)
     {
-        PropertyMetadata pm = _entityMeta.getUnmappedHandler();
+        MapPropertyMetadata pm = _entityMeta.getUnmappedHandler();
         if(pm != null)
         {
             if(unmapped == null)
@@ -210,7 +279,14 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
                 invokeSetter(pm, value, unmapped);
             }
             
-            Object pval = pm.getSerializer().fromByteBuffer(col.getValueBytes());
+            Serializer<?> valueSer;
+            
+            if(pm.getValuePropertyMetadata().getPropertyType() == EPropertyType.SIMPLE)
+                valueSer = ((SimplePropertyMetadata) pm.getValuePropertyMetadata()).getSerializer();
+            else
+                valueSer = ByteIndicatorSerializer.get();
+
+            Object pval = valueSer.fromByteBuffer(col.getValueBytes());
             if(pval != null)
             {
                 unmapped.put(pname, pval);
@@ -241,7 +317,7 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
      * @return the updated entity
      */
     protected V fromColumnSlice(K key, V value, 
-                              PropertyMetadata keyMeta, byte[] keyBytes, 
+                              SimplePropertyMetadata keyMeta, byte[] keyBytes, 
                               SliceQuery<byte[], byte[], byte[]> query, ColumnSlice<byte[], byte[]> slice,
                               byte[] rangeEnd)
     {
@@ -297,7 +373,7 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
             }
         }
 
-        for(PropertyMetadata pm : _entityMeta.getProperties())
+        for(PropertyMetadataBase pm : _entityMeta.getProperties())
         {
             if(!excludes.contains(pm.getName()))
                 props.add(pm.getName());
@@ -313,9 +389,9 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
      * @param excludes the columns to exclude
      * @return the collection properties included
      */
-    protected List<PropertyMetadata> derivePartialColumns(List<byte[]> colNames, Set<? extends Object> includes, Set<String> excludes)
+    protected List<PropertyMetadataBase> derivePartialColumns(List<byte[]> colNames, Set<? extends Object> includes, Set<String> excludes)
     {
-        List<PropertyMetadata> fullCollectionProperties = null;
+        List<PropertyMetadataBase> fullCollectionProperties = null;
         Set<? extends Object> partialProperties = partialProperties(includes, excludes);
         for(Object property : partialProperties)
         {
@@ -323,15 +399,15 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
             if(property instanceof String)
             {
                 String strProp = (String) property;
-                PropertyMetadata pm = _entityMeta.getProperty(strProp);
+                PropertyMetadataBase pm = _entityMeta.getProperty(strProp);
                 if(_entityMeta.getUnmappedHandler() == null && pm == null)
                     throw new IllegalArgumentException("unrecognized property " + strProp);
                 
                 //collections need to be handled separately
-                if(pm != null && pm.isCollection())
+                if(pm != null && isCollectionProp(pm))
                 {
                     if(fullCollectionProperties == null)
-                        fullCollectionProperties = new ArrayList<PropertyMetadata>();
+                        fullCollectionProperties = new ArrayList<PropertyMetadataBase>();
                     
                     fullCollectionProperties.add(pm);
                     continue; 
@@ -374,7 +450,7 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
     @SuppressWarnings({ "rawtypes", "unchecked" })
     protected List<V> bulkLoadFromMultiGet(Collection<K> keys, List<V> values, List<byte[]> colNames, byte[] first, byte[] last, boolean maintainOrder)
     {
-        PropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
+        SimplePropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
         MultigetSliceQuery<byte[], byte[], byte[]> query = HFactory.createMultigetSliceQuery(_keyspaceFactory.createKeyspace(),
                                                                                              SER_BYTES,
                                                                                              SER_BYTES,
@@ -452,11 +528,11 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
      * @param fullCollectionProperties the properties to fetch
      * @return the updated values
      */
-    protected List<V> addFullCollectionProperties(List<K> keys, List<V> values, List<PropertyMetadata> fullCollectionProperties)
+    protected List<V> addFullCollectionProperties(List<K> keys, List<V> values, List<PropertyMetadataBase> fullCollectionProperties)
     {
         if(fullCollectionProperties != null)
         {
-            for(PropertyMetadata pm : fullCollectionProperties)
+            for(PropertyMetadataBase pm : fullCollectionProperties)
             {
                 DynamicComposite dc = new DynamicComposite();
                 dc.addComponent(0, pm.getPhysicalName(), ComponentEquality.EQUAL);

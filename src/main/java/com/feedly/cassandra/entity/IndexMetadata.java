@@ -15,21 +15,21 @@ public class IndexMetadata
 {
     private final EIndexType _type;
     private final IIndexRowPartitioner _indexPartitioner;
-    private final List<PropertyMetadata> _indexedProps;
+    private final List<SimplePropertyMetadata> _indexedProps;
     private final String _id;
     
     public IndexMetadata(String cfName,
-                         List<PropertyMetadata> indexedProps,
+                         List<SimplePropertyMetadata> indexedProps,
                          IIndexRowPartitioner indexPartitioner,
                          EIndexType idxType) 
     {
         _type = idxType;
-        _indexedProps = Collections.unmodifiableList(new ArrayList<PropertyMetadata>(indexedProps));
+        _indexedProps = Collections.unmodifiableList(new ArrayList<SimplePropertyMetadata>(indexedProps));
         _indexPartitioner = indexPartitioner;
         
         StringBuilder id = new StringBuilder();
         boolean first = true;
-        for(PropertyMetadata pm : indexedProps)
+        for(SimplePropertyMetadata pm : indexedProps)
         {
             if(first)
                 first = false;
@@ -80,7 +80,7 @@ public class IndexMetadata
         return _indexPartitioner;
     }
 
-    public List<PropertyMetadata> getIndexedProperties()
+    public List<SimplePropertyMetadata> getIndexedProperties()
     {
         return _indexedProps;
     }

@@ -1,7 +1,11 @@
 package com.feedly.cassandra.dao;
 
 import java.math.BigInteger;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import me.prettyprint.cassandra.serializers.BytesArraySerializer;
 import me.prettyprint.cassandra.serializers.DynamicCompositeSerializer;
@@ -14,10 +18,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.feedly.cassandra.IKeyspaceFactory;
+import com.feedly.cassandra.entity.EPropertyType;
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.EntityUtils;
-import com.feedly.cassandra.entity.PropertyMetadata;
-import com.feedly.cassandra.entity.enhance.ColumnFamilyTransformTask;
+import com.feedly.cassandra.entity.PropertyMetadataBase;
+import com.feedly.cassandra.entity.enhance.EntityTransformerTask;
 import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 
 abstract class DaoHelperBase<K,V>
@@ -28,6 +33,11 @@ abstract class DaoHelperBase<K,V>
     protected static final StringSerializer SER_STRING = StringSerializer.get();
     protected static final DynamicCompositeSerializer SER_COMPOSITE = new DynamicCompositeSerializer();
 
+    private static final Set<EPropertyType> COLLECTION_PROPS = 
+            Collections.unmodifiableSet(new HashSet<EPropertyType>(Arrays.asList(new EPropertyType[] {EPropertyType.LIST, 
+                    EPropertyType.MAP, 
+                    EPropertyType.SORTED_MAP})));
+
     protected final EntityMetadata<V> _entityMeta;
     protected IKeyspaceFactory _keyspaceFactory;
 
@@ -35,6 +45,11 @@ abstract class DaoHelperBase<K,V>
     {
         _entityMeta = meta;
         _keyspaceFactory = factory;
+    }
+    
+    protected static boolean isCollectionProp(PropertyMetadataBase pmb)
+    {
+        return COLLECTION_PROPS.contains(pmb.getPropertyType());
     }
     
     /**
@@ -45,12 +60,12 @@ abstract class DaoHelperBase<K,V>
      */
     protected byte[] collectionPropertyName(CollectionProperty cp, ComponentEquality keyEq)
     {
-        PropertyMetadata pm = _entityMeta.getProperty(cp.getProperty());
+        PropertyMetadataBase pm = _entityMeta.getProperty(cp.getProperty());
         
-        if(pm == null || !pm.isCollection())
+        if(pm == null || !isCollectionProp(pm))
             throw new IllegalArgumentException("property " + cp.getProperty() + " is not a collection");
 
-        if(pm.getFieldType().equals(List.class) && !(cp.getKey() instanceof Integer))
+        if(pm.getPropertyType() == EPropertyType.LIST && !(cp.getKey() instanceof Integer))
             throw new IllegalArgumentException("key for property" + cp.getProperty() + " must be an int");
         
         DynamicComposite dc = new DynamicComposite();
@@ -117,11 +132,11 @@ abstract class DaoHelperBase<K,V>
         catch(ClassCastException cce)
         {
             throw new IllegalArgumentException(value.getClass().getSimpleName()
-                    + " was not enhanced. Entity classes must be enhanced post compilation See " + ColumnFamilyTransformTask.class.getName());
+                    + " was not enhanced. Entity classes must be enhanced post compilation See " + EntityTransformerTask.class.getName());
         }
     }
     
-    protected Object invokeGetter(PropertyMetadata pm, V obj)
+    protected Object invokeGetter(PropertyMetadataBase pm, V obj)
     {
         try
         {
@@ -133,7 +148,7 @@ abstract class DaoHelperBase<K,V>
         }
     }
 
-    protected void invokeSetter(PropertyMetadata pm, V obj, Object value)
+    protected void invokeSetter(PropertyMetadataBase pm, V obj, Object value)
     {
         try
         {

@@ -8,7 +8,8 @@ import java.util.Set;
 
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.IndexMetadata;
-import com.feedly.cassandra.entity.PropertyMetadata;
+import com.feedly.cassandra.entity.PropertyMetadataBase;
+import com.feedly.cassandra.entity.SimplePropertyMetadata;
 import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 
 /**
@@ -21,24 +22,24 @@ import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 class EqualityValueFilter<V> implements IValueFilter<V>
 {
     private final EntityMetadata<V> _entityMeta;
-    private final Map<PropertyMetadata, Object> _propsFilter = new HashMap<PropertyMetadata, Object>();
+    private final Map<PropertyMetadataBase, Object> _propsFilter = new HashMap<PropertyMetadataBase, Object>();
     
     public EqualityValueFilter(EntityMetadata<V> meta, V template, IndexMetadata index)
     {
         _entityMeta = meta;
         BitSet dirty = ((IEnhancedEntity)template).getModifiedFields();
-        Set<PropertyMetadata> indexedProps = new HashSet<PropertyMetadata>();
+        Set<SimplePropertyMetadata> indexedProps = new HashSet<SimplePropertyMetadata>();
         
         for(int i = dirty.nextSetBit (0); i>= 0; i = dirty.nextSetBit(i+1)) 
         {
-            PropertyMetadata p = _entityMeta.getProperties().get(i);
+            PropertyMetadataBase p = _entityMeta.getProperties().get(i);
             
             if(!indexedProps.contains(p))
                 _propsFilter.put(p, invokeGetter(p, template));
         }
         
 
-        for(PropertyMetadata pm : index.getIndexedProperties())
+        for(SimplePropertyMetadata pm : index.getIndexedProperties())
         {
             _propsFilter.remove(pm);
         }
@@ -47,7 +48,7 @@ class EqualityValueFilter<V> implements IValueFilter<V>
     public EFilterResult isFiltered(IndexedValue<V> value)
     {
         
-        for(Map.Entry<PropertyMetadata, Object> entry : _propsFilter.entrySet())
+        for(Map.Entry<PropertyMetadataBase, Object> entry : _propsFilter.entrySet())
         {
             Object pval = invokeGetter(entry.getKey(), value.getValue());
             if(!entry.getValue().equals(pval))
@@ -57,7 +58,7 @@ class EqualityValueFilter<V> implements IValueFilter<V>
         return EFilterResult.PASS;
     }
     
-    protected Object invokeGetter(PropertyMetadata pm, V obj)
+    protected Object invokeGetter(PropertyMetadataBase pm, V obj)
     {
         try
         {

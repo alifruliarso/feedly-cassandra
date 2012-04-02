@@ -3,12 +3,12 @@ package com.feedly.cassandra.dao;
 import java.util.Collection;
 import java.util.List;
 
-import com.feedly.cassandra.entity.enhance.ColumnFamilyTransformTask;
+import com.feedly.cassandra.entity.enhance.EntityTransformerTask;
 
 /**
  * Manages object persistence in the Cassandra datastore. This object manages saving, loading (key lookup), and finding (secondary index 
  * lookup) objects in the database. Implementations should be thread-safe. Entity classes should be enhanced using 
- * {@link ColumnFamilyTransformTask} at compile time.
+ * {@link EntityTransformerTask} at compile time.
  * 
  * @author kireet
  *

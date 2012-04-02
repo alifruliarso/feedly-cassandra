@@ -28,7 +28,7 @@ import org.slf4j.LoggerFactory;
 import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.IndexMetadata;
-import com.feedly.cassandra.entity.PropertyMetadata;
+import com.feedly.cassandra.entity.SimplePropertyMetadata;
 
 /*
  * used to fetch data using custom secondary indexes. Lazy loading is supported.
@@ -161,10 +161,10 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
 
     private IndexedValue<V> indexedValue(V v, IndexMetadata index)
     {
-        List<PropertyMetadata> indexedProperties = index.getIndexedProperties();
+        List<SimplePropertyMetadata> indexedProperties = index.getIndexedProperties();
         List<Object> indexValues = new ArrayList<Object>(indexedProperties.size());
         
-        for(PropertyMetadata pm : indexedProperties)
+        for(SimplePropertyMetadata pm : indexedProperties)
         {
             Object propVal = invokeGetter(pm, v);
             if(propVal == null)
@@ -178,12 +178,12 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
     private List<Object> indexValues(V template, IndexMetadata index) 
     {
         BitSet dirty = asEntity(template).getModifiedFields();
-        Set<PropertyMetadata> modified = new HashSet<PropertyMetadata>();
+        Set<SimplePropertyMetadata> modified = new HashSet<SimplePropertyMetadata>();
         List<Object> propValues = new ArrayList<Object>();
         for(int i = dirty.nextSetBit(0); i>= 0; i = dirty.nextSetBit(i+1))
-            modified.add(_entityMeta.getProperties().get(i));
+            modified.add((SimplePropertyMetadata) _entityMeta.getProperties().get(i));
         
-        for(PropertyMetadata pm : index.getIndexedProperties())
+        for(SimplePropertyMetadata pm : index.getIndexedProperties())
         {
             if(modified.contains(pm))
                 propValues.add(invokeGetter(pm, template));
@@ -461,7 +461,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
         if(options.getColumnFilterStrategy() == EColumnFilterStrategy.INCLUDES)
         {
             Set<Object> partialProperties = new HashSet<Object>(partialProperties(options.getIncludes(), options.getExcludes()));
-            for(PropertyMetadata pm : index.getIndexedProperties())
+            for(SimplePropertyMetadata pm : index.getIndexedProperties())
                 partialProperties.add(pm.getName());
             
             try

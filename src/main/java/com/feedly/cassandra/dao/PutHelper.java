@@ -19,10 +19,15 @@ import me.prettyprint.hector.api.factory.HFactory;
 import me.prettyprint.hector.api.mutation.Mutator;
 
 import com.feedly.cassandra.IKeyspaceFactory;
+import com.feedly.cassandra.entity.ByteIndicatorSerializer;
 import com.feedly.cassandra.entity.EIndexType;
+import com.feedly.cassandra.entity.EPropertyType;
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.IndexMetadata;
-import com.feedly.cassandra.entity.PropertyMetadata;
+import com.feedly.cassandra.entity.ListPropertyMetadata;
+import com.feedly.cassandra.entity.MapPropertyMetadata;
+import com.feedly.cassandra.entity.PropertyMetadataBase;
+import com.feedly.cassandra.entity.SimplePropertyMetadata;
 import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 
 class PutHelper<K, V> extends DaoHelperBase<K, V>
@@ -44,7 +49,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
 
     public void mput(Collection<V> values)
     {
-        PropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
+        SimplePropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
         Keyspace keyspace = _keyspaceFactory.createKeyspace();
         Mutator<byte[]> mutator = HFactory.createMutator(keyspace, SER_BYTES);
         Mutator<byte[]> walMutator = null;
@@ -125,7 +130,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                                   long clock,
                                   Mutator<byte[]> mutator)
     {
-        List<PropertyMetadata> properties = _entityMeta.getProperties();
+        List<PropertyMetadataBase> properties = _entityMeta.getProperties();
 
         IEnhancedEntity entity = asEntity(value);
         BitSet dirty = entity.getModifiedFields();
@@ -135,24 +140,41 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
         {
             for(int i = dirty.nextSetBit(0); i >= 0; i = dirty.nextSetBit(i + 1))
             {
-                PropertyMetadata colMeta = properties.get(i);
+                PropertyMetadataBase colMeta = properties.get(i);
 
-                if(colMeta.isCollection())
+                if(isCollectionProp(colMeta))
                 {
-                    if(colMeta.getFieldType().equals(List.class))
-                        rv[0] += saveListFields(key, keyBytes, colMeta, value, clock, mutator);
+                    StringBuilder descriptor = null;
+                    if(_logger.isTraceEnabled())
+                    {
+                        descriptor = new StringBuilder();
+                        descriptor.append(_entityMeta.getFamilyName());
+                        descriptor.append("[").append(key).append("]").append(".").append(colMeta.getName());
+                    }
+                    
+                    DynamicComposite colName = new DynamicComposite(colMeta.getPhysicalName());
+
+                    if(colMeta.getPropertyType() == EPropertyType.LIST)
+                    {
+                        List<?> list = (List<?>) invokeGetter(colMeta, value);
+                        rv[0] += saveListFields(descriptor, keyBytes, colName, (ListPropertyMetadata) colMeta, list, clock, mutator);
+                    }
                     else
-                        rv[0] += saveMapFields(key, keyBytes, colMeta, value, clock, mutator);
+                    {
+                        Map<?, ?> map = (Map<?,?>) invokeGetter(colMeta, value);
+                        rv[0] += saveMapFields(descriptor, keyBytes, colName, (MapPropertyMetadata) colMeta, map, clock, mutator);
+                    }
                 }
                 else
                 {
+                    SimplePropertyMetadata spm = (SimplePropertyMetadata) colMeta;
                     Object propVal = invokeGetter(colMeta, value);
                     
                     _logger.trace("{}[{}].{} = {}", new Object[] { _entityMeta.getType().getSimpleName(), key, colMeta.getName(), propVal});
                     
                     if(propVal != null)
                     {
-                        HColumn column = HFactory.createColumn(colMeta.getPhysicalNameBytes(), propVal, clock, SER_BYTES, (Serializer) colMeta.getSerializer());
+                        HColumn column = HFactory.createColumn(colMeta.getPhysicalNameBytes(), propVal, clock, SER_BYTES, (Serializer) spm.getSerializer());
                         mutator.addInsertion(keyBytes, _entityMeta.getFamilyName(), column);
 
                     }
@@ -161,7 +183,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                         mutator.addDeletion(keyBytes, _entityMeta.getFamilyName(), colMeta.getPhysicalNameBytes(), SER_BYTES, clock);
                     }
 
-                    for(IndexMetadata idxMeta : _entityMeta.getIndexes(colMeta))
+                    for(IndexMetadata idxMeta : _entityMeta.getIndexes((SimplePropertyMetadata) colMeta))
                     {
                         if(idxMeta.getType() == EIndexType.RANGE && affectedIndexes.add(idxMeta))
                         {
@@ -190,7 +212,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
         List<Object> propVals = null;
         DynamicComposite colName = new DynamicComposite();
         boolean propertyNotSet = false;
-        for(PropertyMetadata pm : idxMeta.getIndexedProperties())
+        for(SimplePropertyMetadata pm : idxMeta.getIndexedProperties())
         {
             Object pval = invokeGetter(pm, value);
             if(pval != null)
@@ -231,38 +253,87 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
         mutator.addInsertion(SER_COMPOSITE.toBytes(rowKey), _entityMeta.getIndexFamilyName(), column);
     }
 
-    private int saveMapFields(Object key, byte[] keyBytes, PropertyMetadata colMeta, V value, long clock, Mutator<byte[]> mutator)
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    private int saveMapFields(StringBuilder descriptor,
+                              byte[] keyBytes,
+                              DynamicComposite colName,
+                              MapPropertyMetadata colMeta, 
+                              Map<?, ?> map, 
+                              long clock, 
+                              Mutator<byte[]> mutator)
     {
-        Map<?, ?> map = (Map<?,?>) invokeGetter(colMeta, value);
-        
         if(map == null)
         {
-            _logger.warn(String.format("{}[{}].{} null collections are ignored, to delete values, set individual keys with null values",
-                                          _entityMeta.getFamilyName(),
-                                          key,
-                                          colMeta.getName()));
-                          
+            _logger.warn("{} null collections are ignored, to delete values, set individual keys with null values", 
+                         descriptor == null ? "" : descriptor);
             return 0;
         }
-        
 
+        PropertyMetadataBase valuePropertyMeta = colMeta.getValuePropertyMetadata();
+        EPropertyType t = valuePropertyMeta.getPropertyType();
         for(Map.Entry<?, ?> entry : map.entrySet())
         {
-            saveCollectionColumn(key, keyBytes, entry.getKey(), entry.getValue(), colMeta, clock, mutator);
+            String keyStr = null;
+            if(descriptor != null)
+            {
+                keyStr = entry.getKey().toString();
+                descriptor.append(".").append(keyStr);
+            }
+
+            if(t == EPropertyType.SIMPLE)
+            {
+                DynamicComposite dc = new DynamicComposite(colName);
+                dc.addComponent(entry.getKey(), (Serializer) colMeta.getKeyPropertyMetadata().getSerializer());
+                saveCollectionColumn(descriptor, keyBytes, dc, entry.getValue(), (SimplePropertyMetadata) valuePropertyMeta, clock, mutator);
+            }
+            else if(t == EPropertyType.LIST)
+            {
+                colName.addComponent(entry.getKey(), (Serializer) colMeta.getKeyPropertyMetadata().getSerializer());
+                saveListFields(descriptor, 
+                               keyBytes, 
+                               colName, 
+                               (ListPropertyMetadata) valuePropertyMeta, 
+                               (List<?>) entry.getValue(), 
+                               clock, 
+                               mutator);
+                colName.remove(colName.size() - 1);
+            }
+            else if(t == EPropertyType.MAP || t == EPropertyType.SORTED_MAP)
+            {
+                Map<?, ?> subMap = (Map<?, ?>) entry.getValue();
+                colName.addComponent(entry.getKey(), (Serializer) colMeta.getKeyPropertyMetadata().getSerializer());
+                saveMapFields(descriptor, 
+                              keyBytes, 
+                              colName, 
+                              (MapPropertyMetadata) valuePropertyMeta, 
+                              subMap, 
+                              clock, 
+                              mutator);
+                colName.remove(colName.size() - 1);
+            }
+            
+            if(descriptor != null)
+            {
+                int len = descriptor.length();
+                descriptor.delete(len - (1 + keyStr.length()), len);
+            }
         }
         
         return map.size();  
     }
 
-    private int saveListFields(Object key, byte[] keyBytes, PropertyMetadata colMeta, V value, long clock, Mutator<byte[]> mutator)
+    private int saveListFields(StringBuilder descriptor, 
+                               byte[] keyBytes, 
+                               DynamicComposite colName, 
+                               ListPropertyMetadata colMeta, 
+                               List<?> list, 
+                               long clock, 
+                               Mutator<byte[]> mutator)
     {
-        List<?> list = (List<?>) invokeGetter(colMeta, value);
-        
         if(list == null)
         {
-            _logger.warn("{}[{}].{} null collections are ignored, to delete values, set individual keys with null values",
-                         new Object[] {_entityMeta.getFamilyName(), key, colMeta.getName()});
-                          
+            _logger.warn("{} null collections are ignored, to delete values, set individual keys with null values",
+                         descriptor == null ? "" : descriptor);
             return 0;
         }
         
@@ -270,25 +341,91 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
         
         int dbIdx = 0;
 
+        PropertyMetadataBase elementPropertyMeta = colMeta.getElementPropertyMetadata();
+        EPropertyType t = colMeta.getElementPropertyMetadata().getPropertyType();
+
         for(int i = 0; i < size; i++) 
         {
+            String keyStr = null;
+            if(descriptor != null)
+            {
+                keyStr = String.valueOf(i);                    
+                descriptor.append("[").append(keyStr).append("]");
+            }
+
             Object listVal = list.get(i);
             if(listVal != null)
             {
-                saveCollectionColumn(key, keyBytes, dbIdx, list.get(i), colMeta, clock, mutator);
+                if(t == EPropertyType.SIMPLE)
+                {
+                    DynamicComposite dc = new DynamicComposite(colName);
+                    dc.add(dbIdx);
+                    saveCollectionColumn(descriptor, keyBytes, dc, listVal, (SimplePropertyMetadata) elementPropertyMeta, clock, mutator);
+                }
+                else if(t == EPropertyType.LIST)
+                {
+                    colName.add(dbIdx);
+                    saveListFields(descriptor, 
+                                   keyBytes, 
+                                   colName, 
+                                   (ListPropertyMetadata) elementPropertyMeta, 
+                                   (List<?>) listVal, 
+                                   clock, 
+                                   mutator);
+                    colName.remove(colName.size() - 1);
+                }
+                else if(t == EPropertyType.MAP || t == EPropertyType.SORTED_MAP)
+                {
+                    colName.add(dbIdx);
+                    saveMapFields(descriptor, 
+                                  keyBytes, 
+                                  colName, 
+                                  (MapPropertyMetadata) elementPropertyMeta, 
+                                  (Map<?,?>) listVal, 
+                                  clock, 
+                                  mutator);
+                    colName.remove(colName.size() - 1);
+                }
                 dbIdx++;
+            }
+            
+            if(descriptor != null)
+            {
+                int len = descriptor.length();
+                descriptor.delete(len - (keyStr.length() + 2), len);
             }
         }
 
-        if(dbIdx < size)
+        if(dbIdx < size && colMeta.getElementPropertyMetadata() instanceof SimplePropertyMetadata)
         {
-            _logger.debug("{}[{}].{} list shortened. deleting last {} entries",
-                          new Object[]{_entityMeta.getFamilyName(), key, colMeta.getName(), size - dbIdx});
+            _logger.debug("{}[{}] list shortened. deleting last {} entries",
+                          new Object[]{descriptor, size - dbIdx});
             
             Mutator<byte[]> delMutator = HFactory.createMutator(_keyspaceFactory.createKeyspace(), SER_BYTES);
             for(int i = dbIdx; i < size; i++)
             {
-                saveCollectionColumn(key, keyBytes, i, null, colMeta, clock-1, delMutator);
+                String keyStr = null;
+                if(descriptor != null)
+                {
+                    keyStr = String.valueOf(i);                    
+                    descriptor.append("[").append(keyStr).append("]");
+                }
+                
+                DynamicComposite dc = new DynamicComposite(colName);
+                dc.add(i);
+                saveCollectionColumn(descriptor, 
+                                     keyBytes, 
+                                     dc,
+                                     null, 
+                                     (SimplePropertyMetadata) colMeta.getElementPropertyMetadata(), 
+                                     clock-1,
+                                     delMutator);
+
+                if(descriptor != null)
+                {
+                    int len = descriptor.length();
+                    descriptor.delete(len - (keyStr.length() + 2), len);
+                }
             }
 
             delMutator.execute();
@@ -297,26 +434,16 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
         return size;  
     }
 
-    private boolean saveCollectionColumn(Object key,
+    private boolean saveCollectionColumn(StringBuilder descriptor,
                                          byte[] keyBytes,
-                                         Object propKey,
+                                         DynamicComposite colName,
                                          Object propVal,
-                                         PropertyMetadata colMeta,
+                                         SimplePropertyMetadata colMeta,
                                          long clock,
                                          Mutator<byte[]> mutator)
     {
-        _logger.trace("{}[{}].{}:{} = {}", new Object[] {_entityMeta.getType().getSimpleName(), key, colMeta.getName(), propKey, propVal});
+        _logger.trace("{} = {}", descriptor, propVal);
 
-        if(propKey == null)
-        {
-            throw new IllegalArgumentException(String.format("problem serializing %s[%s].%s:null = %s. ensure keys are not null",
-                                                             _entityMeta.getFamilyName(),
-                                                             key,
-                                                             colMeta.getName(),
-                                                             propVal));
-        }
-
-        DynamicComposite colName = new DynamicComposite(colMeta.getPhysicalName(), propKey);
         if(propVal == null)
         {
             mutator.addDeletion(keyBytes, _entityMeta.getFamilyName(), colName, SER_COMPOSITE, clock);
@@ -326,11 +453,9 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
             byte[] propValBytes = serialize(propVal, false, colMeta.getSerializer());
             if(propValBytes == null)
             {
-                throw new IllegalArgumentException(String.format("problem serializing %s[%s].%s:%s = %s. ensure values can be serialized",
+                throw new IllegalArgumentException(String.format("problem serializing %s = %s. ensure values can be serialized",
                                                                  _entityMeta.getFamilyName(),
-                                                                 key,
-                                                                 colMeta.getName(),
-                                                                 propKey,
+                                                                 descriptor,
                                                                  propVal));
             }
 
@@ -347,7 +472,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
         if(!asEntity(value).getUnmappedFieldsModified())
             return 0;
 
-        PropertyMetadata unmappedMeta = _entityMeta.getUnmappedHandler();
+        MapPropertyMetadata unmappedMeta = _entityMeta.getUnmappedHandler();
 
         if(unmappedMeta == null)
             return 0;
@@ -360,7 +485,12 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
 
         int colCnt = unmapped.size();
 
-        Serializer<?> valueSer = unmappedMeta.getSerializer();
+        Serializer<?> valueSer;
+        
+        if(unmappedMeta.getValuePropertyMetadata().getPropertyType() == EPropertyType.SIMPLE)
+            valueSer = ((SimplePropertyMetadata) unmappedMeta.getValuePropertyMetadata()).getSerializer();
+        else
+            valueSer = ByteIndicatorSerializer.get();
         for(Map.Entry<?, ?> entry : unmapped.entrySet())
         {
 

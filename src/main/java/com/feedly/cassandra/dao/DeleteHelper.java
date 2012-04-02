@@ -9,7 +9,7 @@ import me.prettyprint.hector.api.mutation.Mutator;
 
 import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.entity.EntityMetadata;
-import com.feedly.cassandra.entity.PropertyMetadata;
+import com.feedly.cassandra.entity.SimplePropertyMetadata;
 
 class DeleteHelper<K, V> extends DaoHelperBase<K, V>
 {
@@ -27,7 +27,7 @@ class DeleteHelper<K, V> extends DaoHelperBase<K, V>
     //for now, not cleaning up indexes, it's assumed subsequent finds will eventually clean up stale entries
     public void mdelete(Collection<K> keys)
     {
-        PropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
+        SimplePropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
         Keyspace keyspace = _keyspaceFactory.createKeyspace();
         Mutator<byte[]> mutator = HFactory.createMutator(keyspace, SER_BYTES);
         

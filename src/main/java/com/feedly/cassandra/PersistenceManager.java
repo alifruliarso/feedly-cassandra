@@ -36,8 +36,9 @@ import com.feedly.cassandra.anno.ColumnFamily;
 import com.feedly.cassandra.entity.EIndexType;
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.IndexMetadata;
-import com.feedly.cassandra.entity.PropertyMetadata;
-import com.feedly.cassandra.entity.enhance.ColumnFamilyTransformTask;
+import com.feedly.cassandra.entity.PropertyMetadataBase;
+import com.feedly.cassandra.entity.SimplePropertyMetadata;
+import com.feedly.cassandra.entity.enhance.EntityTransformerTask;
 import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 
 public class PersistenceManager implements IKeyspaceFactory
@@ -124,7 +125,7 @@ public class PersistenceManager implements IKeyspaceFactory
             if(!enh)
             {
                 _logger.warn(family.getName() + " has not been enhanced after compilation, it will be ignored. See ", 
-                             ColumnFamilyTransformTask.class.getName());
+                             EntityTransformerTask.class.getName());
                 
                 iter.remove();
             }
@@ -208,7 +209,7 @@ public class PersistenceManager implements IKeyspaceFactory
             {
                 if(im.getType() == EIndexType.HASH)
                 {
-                    PropertyMetadata pm = im.getIndexedProperties().get(0);
+                    SimplePropertyMetadata pm = im.getIndexedProperties().get(0);
                     cfDef.addColumnDefinition(createColDef(meta, familyName, pm)); //must be exactly 1 prop
                     hashIndexed.add(pm.getPhysicalName());
                 }
@@ -234,7 +235,7 @@ public class PersistenceManager implements IKeyspaceFactory
             boolean doUpdate = false;
             boolean hasRangeIndexes = false;
             
-            Set<PropertyMetadata> hashIndexedProps = new HashSet<PropertyMetadata>();
+            Set<SimplePropertyMetadata> hashIndexedProps = new HashSet<SimplePropertyMetadata>();
             for(IndexMetadata im : meta.getIndexes())
             {
                 if(im.getType() == EIndexType.HASH)
@@ -259,7 +260,7 @@ public class PersistenceManager implements IKeyspaceFactory
                 else
                     colName = StringSerializer.get().fromByteBuffer(colMeta.getName());
                 
-                PropertyMetadata pm = meta.getPropertyByPhysicalName(colName);
+                PropertyMetadataBase pm = meta.getPropertyByPhysicalName(colName);
                 if(pm != null)
                 {
                     boolean isHashIndexed = hashIndexedProps.remove(pm);
@@ -280,7 +281,7 @@ public class PersistenceManager implements IKeyspaceFactory
 
             syncRangeIndexTables(meta, hasRangeIndexes, keyspaceDef);
             
-            for(PropertyMetadata pm : hashIndexedProps)
+            for(SimplePropertyMetadata pm : hashIndexedProps)
             {
                 existing.addColumnDefinition(createColDef(meta, familyName, pm));
                 
@@ -375,7 +376,7 @@ public class PersistenceManager implements IKeyspaceFactory
         def.setCompressionOptions(opts);
     }
     
-    private BasicColumnDefinition createColDef(EntityMetadata<?> meta, String familyName, PropertyMetadata pm)
+    private BasicColumnDefinition createColDef(EntityMetadata<?> meta, String familyName, SimplePropertyMetadata pm)
     {
         BasicColumnDefinition colDef = new BasicColumnDefinition();
         colDef.setIndexName(String.format("%s_%s", familyName, pm.getPhysicalName()));

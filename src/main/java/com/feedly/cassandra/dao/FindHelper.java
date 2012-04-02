@@ -7,9 +7,11 @@ import java.util.List;
 
 import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.entity.EIndexType;
+import com.feedly.cassandra.entity.EPropertyType;
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.IndexMetadata;
-import com.feedly.cassandra.entity.PropertyMetadata;
+import com.feedly.cassandra.entity.PropertyMetadataBase;
+import com.feedly.cassandra.entity.SimplePropertyMetadata;
 
 /*
  * helper class to do finds (reads by index).
@@ -29,7 +31,7 @@ class FindHelper<K, V> extends LoadHelper<K, V>
     
     private IndexMetadata chooseIndex(boolean rangeOnly, V... templates) 
     {
-        List<PropertyMetadata> props = new ArrayList<PropertyMetadata>();
+        List<SimplePropertyMetadata> props = new ArrayList<SimplePropertyMetadata>();
         BitSet dirty = asEntity(templates[0]).getModifiedFields();
         
         if(templates.length > 1)
@@ -41,7 +43,9 @@ class FindHelper<K, V> extends LoadHelper<K, V>
             
         for(int i = dirty.nextSetBit(0); i >= 0; i = dirty.nextSetBit(i + 1))
         {
-            props.add(_entityMeta.getProperties().get(i));
+            PropertyMetadataBase pmb = _entityMeta.getProperties().get(i); 
+            if(pmb.getPropertyType() == EPropertyType.SIMPLE) //only simple props can be indexed
+                props.add((SimplePropertyMetadata) pmb);
         }
         
         if(props.isEmpty())
@@ -62,7 +66,7 @@ class FindHelper<K, V> extends LoadHelper<K, V>
             }
 
             int cnt = 0;
-            for(PropertyMetadata indexedProp : im.getIndexedProperties())
+            for(SimplePropertyMetadata indexedProp : im.getIndexedProperties())
             {
                 if(props.contains(indexedProp))
                     cnt++;
