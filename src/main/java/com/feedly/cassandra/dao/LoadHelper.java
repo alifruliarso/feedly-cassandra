@@ -183,7 +183,14 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
         }
         else if(t == EPropertyType.LIST)
         {
-            loadListProperty(descriptor, colName, colValue, colName, colIdx+1, (ListPropertyMetadata) valueMeta);
+            List<Object> subList = (List<Object>) map.get(key);
+            if(subList == null)
+            {
+                subList = new ArrayList<Object>();
+                map.put(key, subList);
+            }
+            loadListProperty(descriptor, colName, colValue, subList, colIdx+1, (ListPropertyMetadata) valueMeta);
+            map.put(key, subList);
         }
         else if(t == EPropertyType.MAP || t == EPropertyType.SORTED_MAP)
         {
@@ -217,6 +224,9 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
             list.add(null);
 
         EPropertyType t = elementMeta.getPropertyType();
+        if(descriptor != null)
+            descriptor.append("[").append(idx).append("]");
+
         if(t == EPropertyType.SIMPLE)
         {
             Object pval = ((SimplePropertyMetadata) elementMeta).getSerializer().fromBytes(colValue);
@@ -227,7 +237,7 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
         else if(t == EPropertyType.LIST)
         {
             List<Object> sublist; 
-            if(list.size() >= idx)
+            if(list.size() > idx)
             {
                 sublist = (List<Object>) list.get(idx);
                 if(sublist == null)
@@ -242,14 +252,26 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
                 list.add(sublist);
             }
             
-            if(descriptor != null)
-                descriptor.append("[").append(colIdx).append("]");
-            
             loadListProperty(descriptor, colName, colValue, sublist, colIdx+1, (ListPropertyMetadata) elementMeta);
         }
         else if(t == EPropertyType.MAP || t == EPropertyType.SORTED_MAP)
         {
-            
+            Map<Object, Object> subMap; 
+            if(list.size() > idx)
+            {
+                subMap = (Map<Object, Object>) list.get(idx);
+                if(subMap == null)
+                {
+                    subMap = t == EPropertyType.MAP ? new HashMap<Object, Object>() : new TreeMap<Object, Object>();
+                    list.set(idx, subMap);
+                }
+            }
+            else
+            {
+                subMap = t == EPropertyType.MAP ? new HashMap<Object, Object>() : new TreeMap<Object, Object>();
+                list.add(subMap);
+            }
+            loadMapProperty(descriptor, colName, colValue, subMap, colIdx+1, (MapPropertyMetadata) elementMeta);
         }
     }
 

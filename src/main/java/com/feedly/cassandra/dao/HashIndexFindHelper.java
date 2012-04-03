@@ -10,6 +10,7 @@ import java.util.NoSuchElementException;
 import java.util.Set;
 
 import me.prettyprint.cassandra.model.IndexedSlicesQuery;
+import me.prettyprint.hector.api.beans.AbstractComposite.ComponentEquality;
 import me.prettyprint.hector.api.beans.OrderedRows;
 import me.prettyprint.hector.api.beans.Row;
 import me.prettyprint.hector.api.factory.HFactory;
@@ -54,8 +55,8 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
             case UNFILTERED:
                 return bulkFindByIndexPartial(template, null, null, null, null, options.getMaxRows(), index);
             case RANGE:
-                byte[] startCol = propertyName(options.getStartColumn());
-                byte[] endCol = propertyName(options.getEndColumn());
+                byte[] startCol = propertyName(options.getStartColumn(), ComponentEquality.EQUAL);
+                byte[] endCol = propertyName(options.getEndColumn(), ComponentEquality.GREATER_THAN_EQUAL);
                 return bulkFindByIndexPartial(template, startCol, endCol, null, null, options.getMaxRows(), index);
             case INCLUDES:
                 return mfind(template, options.getIncludes(), options.getExcludes(), options.getMaxRows(), index);

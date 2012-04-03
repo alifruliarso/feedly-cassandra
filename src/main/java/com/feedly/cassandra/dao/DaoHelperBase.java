@@ -82,12 +82,13 @@ abstract class DaoHelperBase<K,V>
     /**
      * generate a property name (column name)
      * @param from the from value, can be a {@link CollectionProperty}
+     * @param eq 
      * @return the key
      */
-    protected byte[] propertyName(Object from)
+    protected byte[] propertyName(Object from, ComponentEquality eq)
     {
         if(from instanceof CollectionProperty)
-            return collectionPropertyName((CollectionProperty) from, ComponentEquality.EQUAL);
+            return collectionPropertyName((CollectionProperty) from, eq);
         else
             return serialize(from, true, null);
     }

@@ -43,7 +43,9 @@ class GetHelper<K, V> extends LoadHelper<K, V>
             case INCLUDES:
                 return get(key, value, options.getIncludes(), options.getExcludes());
             case RANGE:
-                return loadFromGet(key, value, null, propertyName(options.getStartColumn()), propertyName(options.getEndColumn()));
+                return loadFromGet(key, value, null, 
+                                   propertyName(options.getStartColumn(), ComponentEquality.EQUAL), 
+                                   propertyName(options.getEndColumn(), ComponentEquality.GREATER_THAN_EQUAL));
         }
         
         throw new IllegalStateException(); //never happens
@@ -99,7 +101,10 @@ class GetHelper<K, V> extends LoadHelper<K, V>
             case INCLUDES:
                 return mget(keys, values, options.getIncludes(), options.getExcludes());
             case RANGE:
-                return bulkLoadFromMultiGet(keys, values, null, propertyName(options.getStartColumn()), propertyName(options.getEndColumn()), true);
+                return bulkLoadFromMultiGet(keys, values, null, 
+                                            propertyName(options.getStartColumn(), ComponentEquality.EQUAL), 
+                                            propertyName(options.getEndColumn(), ComponentEquality.GREATER_THAN_EQUAL), 
+                                            true);
         }
 
         throw new IllegalStateException(); //never happens
@@ -172,8 +177,8 @@ class GetHelper<K, V> extends LoadHelper<K, V>
                 break;
                 
             case RANGE:
-                byte[] startCol = propertyName(options.getStartColumn());
-                endCol = propertyName(options.getEndColumn()); 
+                byte[] startCol = propertyName(options.getStartColumn(), ComponentEquality.EQUAL);
+                endCol = propertyName(options.getEndColumn(), ComponentEquality.GREATER_THAN_EQUAL); 
                 query.setRange(startCol, endCol, false, CassandraDaoBase.ROW_RANGE_SIZE);                
                 break;
             

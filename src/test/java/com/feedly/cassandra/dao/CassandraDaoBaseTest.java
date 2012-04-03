@@ -2,6 +2,7 @@ package com.feedly.cassandra.dao;
 
 import static org.junit.Assert.*;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -19,6 +20,7 @@ import java.util.TreeMap;
 import me.prettyprint.cassandra.serializers.AsciiSerializer;
 import me.prettyprint.cassandra.serializers.BytesArraySerializer;
 import me.prettyprint.cassandra.serializers.DynamicCompositeSerializer;
+import me.prettyprint.cassandra.serializers.IntegerSerializer;
 import me.prettyprint.cassandra.serializers.LongSerializer;
 import me.prettyprint.cassandra.serializers.StringSerializer;
 import me.prettyprint.hector.api.beans.ColumnSlice;
@@ -45,6 +47,7 @@ import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 import com.feedly.cassandra.entity.enhance.IndexedBean;
 import com.feedly.cassandra.entity.enhance.ListBean;
 import com.feedly.cassandra.entity.enhance.MapBean;
+import com.feedly.cassandra.entity.enhance.NestedBean;
 import com.feedly.cassandra.entity.enhance.PartitionedIndexBean;
 import com.feedly.cassandra.entity.enhance.SampleBean;
 import com.feedly.cassandra.entity.enhance.SortedMapBean;
@@ -58,8 +61,10 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
     MapBeanDao _mapDao;
     SortedMapBeanDao _sortedMapDao;
     ListBeanDao _listDao;
+    NestedBeanDao _nestedBeanDao;
     IndexedBeanDao _indexedDao;
     CompositeIndexedBeanDao _compositeIndexedDao;
+    
     RecordingStrategy _indexedStrategy, _compositeStrategy;
     
     @Before
@@ -81,6 +86,10 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         _listDao = new ListBeanDao();
         _listDao.setKeyspaceFactory(_pm);
         _listDao.init();
+
+        _nestedBeanDao = new NestedBeanDao();
+        _nestedBeanDao.setKeyspaceFactory(_pm);
+        _nestedBeanDao.init();
         
         _indexedDao = new IndexedBeanDao();
         _indexedDao.setKeyspaceFactory(_pm);
@@ -434,6 +443,109 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         assertColumn(bean.getStrProp1(), false, slice.getColumnByName(new DynamicComposite("strProp1")));
         assertColumn(bean.getListProp().get(0), true, slice.getColumnByName(new DynamicComposite("l", 0)));
         assertColumn(bean.getListProp().get(2), true, slice.getColumnByName(new DynamicComposite("l", 1)));
+        
+        /*
+         * Nested
+         */
+        NestedBean nbean = new NestedBean();
+        nbean.setRowkey(10L);
+        List<List<Double>> lol = new ArrayList<List<Double>>();
+        List<Map<String, String>> lom = new ArrayList<Map<String, String>>();
+        List<Map<Long, List<Double>>> lomol = new ArrayList<Map<Long,List<Double>>>();
+        
+        Map<String, Map<Integer, Integer>> mom = new HashMap<String, Map<Integer,Integer>>();
+        Map<String, List<String>> mol = new HashMap<String, List<String>>();
+        Map<String, List<Map<String, Date>>> molom = new HashMap<String, List<Map<String,Date>>>();
+        
+        int numCols = 0;
+        int numD1 = 5;
+        int numD2 = 7;
+        int numD3 = 3;
+
+        for(int i = 0; i < numD1; i++)
+        {
+            lol.add(new ArrayList<Double>());
+            lom.add(new HashMap<String, String>());
+            lomol.add(new HashMap<Long, List<Double>>());
+
+            mom.put("key-" + i, new HashMap<Integer, Integer>());
+            mol.put("key-" + i, new ArrayList<String>());
+            molom.put("key-" + i, new ArrayList<Map<String,Date>>());
+            
+            for(int j = 0; j < numD2; j++)
+            {
+                lol.get(i).add(i*j*1.1);
+                numCols++;
+
+                lom.get(i).put("key-" + j, String.valueOf(i+j+1.1));
+                numCols++;
+
+                mom.get("key-" + i).put(j, i*j);
+                numCols++;
+
+                mol.get("key-" + i).add(i + "-" + j);
+                numCols++;
+                
+                lomol.get(i).put(new Long(j), new ArrayList<Double>());
+                molom.get("key-" + i).add(new HashMap<String, Date>());
+
+                for(int k = 0; k < numD3; k++)
+                {
+                    lomol.get(i).get(new Long(j)).add(i+j+k+.33);
+                    numCols++;
+
+                    molom.get("key-" + i).get(j).put(i + "-" + j + "-" + k, new Date(System.currentTimeMillis() - i*j*k));
+                    numCols++;
+                }
+            }
+        }
+        
+
+        
+        nbean.setListOfListProp(lol);
+        nbean.setListOfMapProp(lom);
+        nbean.setListOfMapOfListProp(lomol);
+        nbean.setMapOfListProp(mol);
+        nbean.setMapOfMapProp(mom);
+        nbean.setMapOfListOfMapProp(molom);
+        _nestedBeanDao.put(nbean);
+
+        query = HFactory.createSliceQuery(keyspace, LongSerializer.get(), dcs, BytesArraySerializer.get());
+        query.setKey(nbean.getRowkey());
+        query.setColumnFamily("nestedbean");
+        
+        query.setRange(new DynamicComposite(), new DynamicComposite(), false, 1000);
+        
+        slice = query.execute().get();
+        assertEquals(numCols, slice.getColumns().size());
+        
+        for(HColumn<DynamicComposite, byte[]> c : slice.getColumns())
+        {
+            if(c.getName().size() == 3 && c.getName().get(2) instanceof ByteBuffer)
+            {
+                c.getName().set(2, IntegerSerializer.get().fromByteBuffer((ByteBuffer) c.getName().get(2))); //dc uses bigint rather than int for some reason...
+            }
+        }
+        for(int i = 0; i < numD1; i++)
+        {
+            for(int j = 0; j < numD2; j++)
+            {
+                assertColumn(nbean.getListOfListProp().get(i).get(j), false, slice.getColumnByName(new DynamicComposite("listOfListProp", i, j)));
+                assertColumn(nbean.getListOfMapProp().get(i).get("key-" + j), false, slice.getColumnByName(new DynamicComposite("listOfMapProp", i, "key-" + j)));
+
+                assertColumn(nbean.getMapOfMapProp().get("key-" + i).get(j), false, slice.getColumnByName(new DynamicComposite("mapOfMapProp", "key-" + i, j)));
+                assertColumn(nbean.getMapOfListProp().get("key-" + i).get(j), false, slice.getColumnByName(new DynamicComposite("mapOfListProp", "key-" + i, j)));
+                
+                for(int k = 0; k < numD3; k++)
+                {
+                    assertColumn(nbean.getListOfMapOfListProp().get(i).get(new Long(j)).get(k), false, slice.getColumnByName(new DynamicComposite("listOfMapOfListProp", i, new Long(j), k)));
+                    
+                    Date exp = nbean.getMapOfListOfMapProp().get("key-" + i).get(j).get(i + "-" + j + "-" + k);
+                    HColumn<DynamicComposite, byte[]> act = slice.getColumnByName(new DynamicComposite("mapOfListOfMapProp", "key-" + i, j, i + "-" + j + "-" + k));
+                    assertColumn(exp, false, act);
+                }
+            }
+        }
     }
 
     
@@ -670,7 +782,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         }
         
         assertEquals(bean0, _mapDao.get(bean0.getRowkey()));
-        
+     
     }
     
     @Test
@@ -799,6 +911,162 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         assertEquals(bean0, _listDao.get(bean0.getRowkey()));
     }
 
+    @Test 
+    public void testNestedGet() throws Exception
+    {
+        List<NestedBean> beans = new ArrayList<NestedBean>();
+        List<Long> keys = new ArrayList<Long>();
+
+        int numBeans = 10;
+        int numD1 = 5;
+        int numD2 = 7;
+        int numD3 = 3;
+
+        for(long n = 0; n < numBeans; n++)
+        {
+            NestedBean bean = new NestedBean();
+            bean.setRowkey(n);
+            keys.add(bean.getRowkey());
+            List<List<Double>> lol = new ArrayList<List<Double>>();
+            List<Map<String, String>> lom = new ArrayList<Map<String, String>>();
+            List<Map<Long, List<Double>>> lomol = new ArrayList<Map<Long,List<Double>>>();
+            
+            Map<String, Map<Integer, Integer>> mom = new HashMap<String, Map<Integer,Integer>>();
+            Map<String, List<String>> mol = new HashMap<String, List<String>>();
+            Map<String, List<Map<String, Date>>> molom = new HashMap<String, List<Map<String,Date>>>();
+
+            for(int i = 0; i < numD1; i++)
+            {
+                lol.add(new ArrayList<Double>());
+                lom.add(new HashMap<String, String>());
+                lomol.add(new HashMap<Long, List<Double>>());
+                
+                mom.put("key-" + i, new HashMap<Integer, Integer>());
+                mol.put("key-" + i, new ArrayList<String>());
+                molom.put("key-" + i, new ArrayList<Map<String,Date>>());
+                
+                for(int j = 0; j < numD2; j++)
+                {
+                    lol.get(i).add(i*j*1.1);
+                    lom.get(i).put("key-" + j, String.valueOf(i+j+1.1));
+                    mom.get("key-" + i).put(j, i*j);
+                    mol.get("key-" + i).add(i + "-" + j);
+                    lomol.get(i).put(new Long(j), new ArrayList<Double>());
+                    molom.get("key-" + i).add(new HashMap<String, Date>());
+                    
+                    for(int k = 0; k < numD3; k++)
+                    {
+                        lomol.get(i).get(new Long(j)).add(i+j+k+.33);
+                        molom.get("key-" + i).get(j).put(i + "-" + j + "-" + k, new Date(System.currentTimeMillis() - i*j*k));
+                    }
+                }
+            }
+            bean.setListOfListProp(lol);
+            bean.setListOfMapProp(lom);
+            bean.setListOfMapOfListProp(lomol);
+            bean.setMapOfListProp(mol);
+            bean.setMapOfMapProp(mom);
+            bean.setMapOfListOfMapProp(molom);
+            
+            beans.add(bean);
+        }
+        
+        _nestedBeanDao.mput(beans);
+        
+        for(int i = 0; i < numBeans; i++)
+        {
+            NestedBean actual = _nestedBeanDao.get((long) i);
+            NestedBean expected = beans.get(i);
+            
+            assertEquals("key " + expected.getRowkey(), expected.getListOfListProp(), actual.getListOfListProp());
+            assertEquals("key " + expected.getRowkey(), expected.getListOfMapProp(), actual.getListOfMapProp());
+            assertEquals("key " + expected.getRowkey(), expected.getListOfMapOfListProp(), actual.getListOfMapOfListProp());
+
+            assertEquals("key " + expected.getRowkey(), expected.getMapOfListProp(), actual.getMapOfListProp());
+            assertEquals("key " + expected.getRowkey(), expected.getMapOfMapProp(), actual.getMapOfMapProp());
+            assertEquals("key " + expected.getRowkey(), expected.getMapOfListOfMapProp(), actual.getMapOfListOfMapProp());
+
+            
+            //this is actually sufficient, previous are to aid debugging inequalities
+            assertEquals("key " + expected.getRowkey(), expected, actual); 
+        }
+        
+        List<NestedBean> actual = new ArrayList<NestedBean>(_nestedBeanDao.mget(keys));
+        Collections.sort(actual);
+        
+        assertEquals(beans, actual);
+        
+        /*
+         * test partials
+         */
+        for(long i = 0; i < numBeans; i++)
+        {
+            Set<String> includes = new HashSet<String>();
+            includes.add("listOfListProp");
+            
+            GetOptions options = new GetOptions(includes, null);
+            
+            NestedBean bean = beans.get((int) i);
+            NestedBean expected = new NestedBean();
+            expected.setRowkey(bean.getRowkey());
+            expected.setListOfListProp(bean.getListOfListProp());
+            NestedBean actualBean = _nestedBeanDao.get(i, null, options);
+            assertEquals(expected, actualBean);
+
+            expected.setListOfMapProp(bean.getListOfMapProp());
+            includes.add("listOfMapProp");
+            actualBean = _nestedBeanDao.get(i, null, options);
+            assertEquals(expected, actualBean);
+
+            expected.setListOfMapOfListProp(bean.getListOfMapOfListProp());
+            includes.add("listOfMapOfListProp");
+            actualBean = _nestedBeanDao.get(i, null, options);
+            assertEquals(expected, actualBean);
+
+            expected.setMapOfMapProp(bean.getMapOfMapProp());
+            includes.add("mapOfMapProp");
+            actualBean = _nestedBeanDao.get(i, null, options);
+            assertEquals(expected, actualBean);
+
+            expected.setMapOfListProp(bean.getMapOfListProp());
+            includes.add("mapOfListProp");
+            actualBean = _nestedBeanDao.get(i, null, options);
+            assertEquals(expected, actualBean);
+
+            expected.setMapOfListOfMapProp(bean.getMapOfListOfMapProp());
+            includes.add("mapOfListOfMapProp");
+            actualBean = _nestedBeanDao.get(i, null, options);
+            assertEquals(expected, actualBean);
+        }
+
+        /*
+         * test partial ranges
+         */
+        for(long i = 0; i < numBeans; i++)
+        {
+            GetOptions options = new GetOptions(new CollectionProperty("listOfMapOfListProp", 2), new CollectionProperty("listOfMapOfListProp", 4));
+            
+            NestedBean bean = beans.get((int) i);
+            NestedBean expected = new NestedBean();
+            expected.setRowkey(bean.getRowkey());
+            
+            List<Map<Long,List<Double>>> subList = new ArrayList<Map<Long,List<Double>>>(bean.getListOfMapOfListProp().subList(2, 5));
+            subList.add(0,  null);
+            subList.add(0,  null);
+            expected.setListOfMapOfListProp(subList);
+            NestedBean actualBean = _nestedBeanDao.get(i, null, options);
+            assertEquals(expected, actualBean);
+            
+            options = new GetOptions(new CollectionProperty("mapOfListOfMapProp", "key-2"), new CollectionProperty("mapOfListOfMapProp", "key-4"));
+            expected.setMapOfListOfMapProp(new HashMap<String, List<Map<String,Date>>>());
+            expected.getMapOfListOfMapProp().put("key-2", bean.getMapOfListOfMapProp().get("key-2"));
+            expected.getMapOfListOfMapProp().put("key-3", bean.getMapOfListOfMapProp().get("key-3"));
+            expected.getMapOfListOfMapProp().put("key-4", bean.getMapOfListOfMapProp().get("key-4"));
+            _nestedBeanDao.get(i, actualBean, options);
+            assertEquals(expected, actualBean);
+        }
+    }
+    
     @Test
     public void testGetPartial() throws Exception
     {
