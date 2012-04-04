@@ -18,7 +18,6 @@ import me.prettyprint.hector.api.factory.HFactory;
 import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.IndexMetadata;
-import com.feedly.cassandra.entity.PropertyMetadataBase;
 import com.feedly.cassandra.entity.SimplePropertyMetadata;
 
 /*
@@ -74,9 +73,9 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
             throw new IllegalArgumentException("either includes or excludes should be specified, not both");
         
         List<byte[]> colNames = new ArrayList<byte[]>();
-        List<PropertyMetadataBase> fullCollectionProperties = derivePartialColumns(colNames, includes, excludes);
+        List<CollectionRange> ranges = derivePartialColumns(colNames, includes, excludes);
 
-        return bulkFindByIndexPartial(template, null, null, colNames, fullCollectionProperties, maxRows, index);
+        return bulkFindByIndexPartial(template, null, null, colNames, ranges, maxRows, index);
         
     }
 
@@ -84,7 +83,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
                                                  byte[] startBytes, 
                                                  byte[] endBytes, 
                                                  List<byte[]> colNames,
-                                                 List<PropertyMetadataBase> fullCollectionProperties,
+                                                 List<CollectionRange> ranges,
                                                  int maxRows, 
                                                  IndexMetadata index)
     {
@@ -106,7 +105,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
 
         return new LazyLoadedCollection(query, 
                                         endBytes, 
-                                        fullCollectionProperties, 
+                                        ranges, 
                                         new EqualityValueFilter<V>(_entityMeta, template, index), 
                                         maxRows,
                                         index);
@@ -119,7 +118,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
                                K lastKey, 
                                int maxRows, 
                                List<V> values, 
-                               List<PropertyMetadataBase> fullCollectionProperties)
+                               List<CollectionRange> ranges)
     {
         SimplePropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
         int fetchRowCount = Math.min(maxRows, CassandraDaoBase.ROW_RANGE_SIZE);
@@ -164,10 +163,10 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
 
         _logger.debug("range {} - {}", first, last);
 
-        if(fullCollectionProperties != null && !values.isEmpty())
+        if(ranges != null && !values.isEmpty())
         {
-            _logger.debug("adding full collections to {} values: ({})", values.size(), fullCollectionProperties);
-            addFullCollectionProperties(keys, values, fullCollectionProperties);
+            _logger.debug("adding full collections to {} values: ({})", values.size(), ranges);
+            addCollectionRanges(keys, values, ranges);
         }
         
         int cnt = rows.getCount();
@@ -200,7 +199,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
         private List<V> _current;
         private Iterator<V> _currentIter;
         private V _next;
-        private List<PropertyMetadataBase> _fullCollectionProperties;
+        private List<CollectionRange> _ranges;
         private int _iteratedCount = 0;
         
         public LazyLoadedIterator(LazyLoadedCollection parent,
@@ -208,7 +207,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
                                   IndexedSlicesQuery<byte[],byte[],byte[]> query, 
                                   byte[] nextStartKey, 
                                   byte[] endCol, 
-                                  List<PropertyMetadataBase> fullCollectionProperties, 
+                                  List<CollectionRange> ranges, 
                                   IValueFilter<V> filter,
                                   int maxRows,
                                   IndexMetadata index)
@@ -221,7 +220,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
             _next = _currentIter.next();
             _query = query;
             _nextStartKey = nextStartKey;
-            _fullCollectionProperties = fullCollectionProperties;
+            _ranges = ranges;
             
             if(first.size() < CassandraDaoBase.ROW_RANGE_SIZE)
                 _remRows = 0;
@@ -269,7 +268,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
                         V last = _current.get(_current.size() - 1);
                         K lastKey = (K) invokeGetter(keyMeta, last);
                         _current.clear();
-                        _nextStartKey = fetchBatch(_query, _nextStartKey, _endCol, lastKey, _remRows, _current, _fullCollectionProperties);
+                        _nextStartKey = fetchBatch(_query, _nextStartKey, _endCol, lastKey, _remRows, _current, _ranges);
                         
                         int cnt = _current.size();
                         if(cnt == 0) //get yielded no rows
@@ -329,12 +328,12 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
         private Integer _size;
         private List<V> _all = null; //if it is known all rows have been fetched, this field is set
         private List<V> _first = new ArrayList<V>();
-        private final List<PropertyMetadataBase> _fullCollectionProperties;
+        private final List<CollectionRange> _ranges;
         
         @SuppressWarnings("unchecked")
         public LazyLoadedCollection(IndexedSlicesQuery<byte[], byte[], byte[]> query, 
                                     byte[] endColBytes, 
-                                    List<PropertyMetadataBase> fullCollectionProperties,
+                                    List<CollectionRange> ranges,
                                     IValueFilter<V> filter,
                                     int maxRows,
                                     IndexMetadata index)
@@ -344,11 +343,11 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
             _maxRows = maxRows;
             _filter = filter;
             _index = index;
-            _fullCollectionProperties = fullCollectionProperties;
+            _ranges = ranges;
             K lastKey = null;
             while(true) //loop until unfiltered rows are found
             {
-                _nextRowKeyBytes = fetchBatch(query, _nextRowKeyBytes, endColBytes, lastKey, maxRows, _first, _fullCollectionProperties);
+                _nextRowKeyBytes = fetchBatch(query, _nextRowKeyBytes, endColBytes, lastKey, maxRows, _first, _ranges);
                 if(_first.isEmpty())
                     break;
                 
@@ -408,7 +407,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
             if(_all != null)
                 return _all.iterator();
             
-            return new LazyLoadedIterator(this, _first, _query, _nextRowKeyBytes, _endColBytes, _fullCollectionProperties, _filter, _maxRows, _index);
+            return new LazyLoadedIterator(this, _first, _query, _nextRowKeyBytes, _endColBytes, _ranges, _filter, _maxRows, _index);
         }
     }
 }

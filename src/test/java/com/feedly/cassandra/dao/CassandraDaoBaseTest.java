@@ -43,11 +43,13 @@ import com.feedly.cassandra.entity.IndexMetadata;
 import com.feedly.cassandra.entity.TestPartitioner;
 import com.feedly.cassandra.entity.enhance.CompositeIndexedBean;
 import com.feedly.cassandra.entity.enhance.ESampleEnum;
+import com.feedly.cassandra.entity.enhance.EmbeddedBean;
 import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 import com.feedly.cassandra.entity.enhance.IndexedBean;
 import com.feedly.cassandra.entity.enhance.ListBean;
 import com.feedly.cassandra.entity.enhance.MapBean;
 import com.feedly.cassandra.entity.enhance.NestedBean;
+import com.feedly.cassandra.entity.enhance.ParentBean;
 import com.feedly.cassandra.entity.enhance.PartitionedIndexBean;
 import com.feedly.cassandra.entity.enhance.SampleBean;
 import com.feedly.cassandra.entity.enhance.SortedMapBean;
@@ -61,6 +63,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
     MapBeanDao _mapDao;
     SortedMapBeanDao _sortedMapDao;
     ListBeanDao _listDao;
+    ParentBeanDao _parentBeanDao;
     NestedBeanDao _nestedBeanDao;
     IndexedBeanDao _indexedDao;
     CompositeIndexedBeanDao _compositeIndexedDao;
@@ -87,6 +90,10 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         _listDao.setKeyspaceFactory(_pm);
         _listDao.init();
 
+        _parentBeanDao = new ParentBeanDao();
+        _parentBeanDao.setKeyspaceFactory(_pm);
+        _parentBeanDao.init();
+        
         _nestedBeanDao = new NestedBeanDao();
         _nestedBeanDao.setKeyspaceFactory(_pm);
         _nestedBeanDao.init();
@@ -102,7 +109,8 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         _compositeStrategy = new RecordingStrategy();
         _compositeIndexedDao.setStaleValueIndexStrategy(_compositeStrategy);
         _compositeIndexedDao.init();
-        
+
+
         configurePersistenceManager(_pm);
         
         _pm.setPackagePrefixes(new String[] {SampleBean.class.getPackage().getName()});
@@ -310,7 +318,132 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         
     }
 
+    private EmbeddedBean embeddedBean(int cnt, int mult)
+    {
+        EmbeddedBean rv = new EmbeddedBean();
+        rv.setDoubleProp(1.1*mult);
+        rv.setStrProp("estr-" + cnt);
+        rv.setListProp(new ArrayList<Integer>());
+        rv.setMapProp(new HashMap<String, Integer>());
+        rv.setUnmappedHandler(new HashMap<String, Object>());
+        for(int i = 0; i < cnt; i++)
+        {
+            rv.getListProp().add(i*mult);
+            rv.getMapProp().put("key-" + i, i*mult*2);
+            rv.getUnmappedHandler().put("unmapped-"+i, "unmapped-" + i*mult*3);
+        }
+        
+        return rv;
+    }
     
+    @Test
+    public void testEmbeddedPut() throws Exception
+    {
+        ParentBean bean = new ParentBean();
+        bean.setRowkey(10L);
+
+        bean.setListProp(new ArrayList<EmbeddedBean>());
+        bean.getListProp().add(embeddedBean(1, 1)); //5 vals
+        bean.getListProp().add(embeddedBean(2, 2)); //8 vals
+        bean.setMapProp(new HashMap<String, EmbeddedBean>());
+        bean.getMapProp().put("mapProp1", embeddedBean(1, 3)); //5 vals
+        bean.getMapProp().put("mapProp2", embeddedBean(2, 4)); //8 vals
+        bean.setStrProp("strProp-val"); //1 val
+        
+        bean.setEmbeddedProp(new EmbeddedBean()); //will be 5 vals
+        bean.getEmbeddedProp().setListProp(new ArrayList<Integer>());
+        bean.getEmbeddedProp().getListProp().add(100);
+        bean.getEmbeddedProp().getListProp().add(200);
+        bean.getEmbeddedProp().setMapProp(new HashMap<String, Integer>());
+        bean.getEmbeddedProp().getMapProp().put("mapProp1", 1000);
+        bean.getEmbeddedProp().getMapProp().put("mapProp2", 2000);
+        bean.getEmbeddedProp().setStrProp("estrProp-val");
+        
+        _parentBeanDao.put(bean);
+
+        assertEmbeddedReset(bean);
+        DynamicCompositeSerializer dcs = new DynamicCompositeSerializer();
+        SliceQuery<Long, DynamicComposite, byte[]> query = HFactory.createSliceQuery(keyspace, LongSerializer.get(), dcs, BytesArraySerializer.get());
+        query.setKey(bean.getRowkey());
+        query.setColumnFamily("parentbean");
+        
+        query.setRange(new DynamicComposite(), new DynamicComposite(), false, 100);
+
+        ColumnSlice<DynamicComposite, byte[]> slice = query.execute().get();
+        
+        assertEquals(5 + 8 + 5 + 8 + 1 + 5, slice.getColumns().size()); 
+        assertColumn(bean.getStrProp(), false, slice.getColumnByName(new DynamicComposite("s")));
+        assertEmbeddedColumn(bean.getEmbeddedProp(), slice, new DynamicComposite("e"));
+        for(int i = 0; i < bean.getListProp().size(); i++)
+            assertEmbeddedColumn(bean.getListProp().get(i), slice, new DynamicComposite("l", i));
+
+        for(Entry<String, EmbeddedBean> entry : bean.getMapProp().entrySet())
+            assertEmbeddedColumn(entry.getValue(), slice, new DynamicComposite("m", entry.getKey()));
+    }
+
+    private void assertEmbeddedReset(ParentBean... beans)
+    {
+        for(int i = 0; i < beans.length; i++)
+        {
+            ParentBean bean = beans[i];
+            List<EmbeddedBean> embedded = new ArrayList<EmbeddedBean>();
+            embedded.add(bean.getEmbeddedProp());
+            embedded.addAll(bean.getListProp());
+            embedded.addAll(bean.getMapProp().values());
+            for(EmbeddedBean e : embedded)
+            {
+                assertTrue(e.getStrProp() + " " + i, ((IEnhancedEntity) e).getModifiedFields().isEmpty());
+                assertFalse(e.getStrProp() + " " + i, ((IEnhancedEntity) e).getUnmappedFieldsModified());
+            }
+        }
+    }
+
+
+    private void assertEmbeddedColumn(EmbeddedBean bean,
+                                      ColumnSlice<DynamicComposite, byte[]> slice,
+                                      DynamicComposite prefix)
+    {
+        prefix.add("s");
+        assertColumn(bean.getStrProp(), false, slice.getColumnByName(prefix));
+        prefix.remove(prefix.size()-1);
+
+        if(bean.getDoubleProp() != 0)
+        {
+            prefix.add("d");
+            assertColumn(bean.getDoubleProp(), false, slice.getColumnByName(prefix));
+            prefix.remove(prefix.size()-1);
+        }
+
+        prefix.add("m");
+        for(Map.Entry entry : bean.getMapProp().entrySet())
+        {
+            prefix.add(entry.getKey());
+            assertColumn(entry.getValue(), false, slice.getColumnByName(prefix));
+            prefix.remove(prefix.size()-1);
+        }
+        prefix.remove(prefix.size()-1);
+
+        prefix.add("l");
+        for(int i = 0; i < bean.getListProp().size(); i++)
+        {
+            prefix.add(i);
+            assertColumn(bean.getListProp().get(i), false, slice.getColumnByName(prefix));
+            prefix.remove(prefix.size()-1);
+        }
+        prefix.remove(prefix.size()-1);
+        
+        if(bean.getUnmappedHandler() != null)
+        {
+            for(Entry<String, Object> entry : bean.getUnmappedHandler().entrySet())
+            {
+                prefix.add(entry.getKey());
+                assertColumn(entry.getValue(), true, slice.getColumnByName(prefix));
+                prefix.remove(prefix.size()-1);
+            }
+        }
+    }
+
+
     @Test
     public void testCollectionPut() throws Exception
     {
@@ -704,6 +837,117 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
 
             assertTrue(((IEnhancedEntity) loaded).getModifiedFields().isEmpty());
         }
+    }
+    
+    @Test
+    public void testEmbeddedGet() throws Exception
+    {
+        int numBeans = 5;
+        List<ParentBean> beans = new ArrayList<ParentBean>();
+        List<Long> keys = new ArrayList<Long>();
+        
+        for(int i = 0; i < numBeans; i++)
+        {
+            ParentBean bean = new ParentBean();
+            bean.setRowkey(new Long(i));
+            keys.add(bean.getRowkey());
+            beans.add(bean);
+            bean.setListProp(new ArrayList<EmbeddedBean>());
+            bean.getListProp().add(embeddedBean(1, i+1)); 
+            bean.getListProp().add(embeddedBean(2, i+2)); 
+            bean.getListProp().add(embeddedBean(3, i+3)); 
+            bean.setMapProp(new HashMap<String, EmbeddedBean>());
+            bean.getMapProp().put("mapProp1", embeddedBean(1, i+3)); //3 vals
+            bean.getMapProp().put("mapProp2", embeddedBean(2, i+4)); 
+            bean.setStrProp("strProp-"+i); //1 val
+
+            bean.setEmbeddedProp(new EmbeddedBean()); //will be 5 vals
+            bean.getEmbeddedProp().setListProp(new ArrayList<Integer>());
+            bean.getEmbeddedProp().getListProp().add(i+100);
+            bean.getEmbeddedProp().getListProp().add(i+200);
+            bean.getEmbeddedProp().setMapProp(new HashMap<String, Integer>());
+            bean.getEmbeddedProp().getMapProp().put("mapProp1", i+1000);
+            bean.getEmbeddedProp().getMapProp().put("mapProp2", i+2000);
+            bean.getEmbeddedProp().setStrProp("estrProp-"+i);
+        }        
+        
+        _parentBeanDao.mput(beans);
+        
+        for(int i = 0; i < numBeans; i++)
+        {
+            ParentBean expected = beans.get(i);
+            ParentBean actual = _parentBeanDao.get(expected.getRowkey());
+            assertEquals(expected.getStrProp(), actual.getStrProp());
+            assertEquals(expected.getEmbeddedProp(), actual.getEmbeddedProp());
+            assertEquals(expected.getListProp(), actual.getListProp());
+            assertEquals(expected.getMapProp(), actual.getMapProp());
+            
+            
+            assertEquals(expected, actual);
+            assertEmbeddedReset(actual);
+        }
+        List<ParentBean> bulkActuals = new ArrayList<ParentBean>(_parentBeanDao.mget(keys));
+        Collections.sort(bulkActuals);
+        assertEquals(beans, bulkActuals);
+        assertEmbeddedReset(bulkActuals.toArray(new ParentBean[0]));
+        
+        /*
+         * test partials
+         */
+        for(long i = 0; i < numBeans; i++)
+        {
+            Set<Object> includes = new HashSet<Object>();
+            includes.add("embeddedProp");
+            
+            GetOptions options = new GetOptions(includes, null);
+            
+            ParentBean bean = beans.get((int) i);
+            ParentBean expected = new ParentBean();
+            expected.setRowkey(bean.getRowkey());
+            expected.setEmbeddedProp(bean.getEmbeddedProp());
+            ParentBean actualBean = _parentBeanDao.get(i, null, options);
+            assertEquals(expected, actualBean);
+
+            expected.setListProp(Arrays.asList(new EmbeddedBean[] {null, bean.getListProp().get(1)}));
+            includes.add(new CollectionProperty("listProp", 1));
+            actualBean = _parentBeanDao.get(i, null, options);
+            assertEquals(expected, actualBean);
+
+            expected.setMapProp(bean.getMapProp());
+            includes.add("mapProp");
+            actualBean = _parentBeanDao.get(i, null, options);
+            assertEquals(expected, actualBean);
+            
+            includes.clear();
+            includes.add(new CollectionProperty("embeddedProp", "s"));
+            expected = new ParentBean();
+            expected.setRowkey(bean.getRowkey());
+            expected.setEmbeddedProp(new EmbeddedBean());
+            expected.getEmbeddedProp().setStrProp(bean.getEmbeddedProp().getStrProp());
+            actualBean = _parentBeanDao.get(i, null, options);
+            assertEquals(expected, actualBean);
+
+
+        }
+
+        /*
+         * test partial ranges
+         */
+        for(long i = 0; i < numBeans; i++)
+        {
+            //note double prop is not set
+            GetOptions options = new GetOptions(new CollectionProperty("embeddedProp", "a"), new CollectionProperty("embeddedProp", "n"));
+            
+            ParentBean bean = beans.get((int) i);
+            ParentBean expected = new ParentBean();
+            expected.setRowkey(bean.getRowkey());
+            expected.setEmbeddedProp(new EmbeddedBean());
+            expected.getEmbeddedProp().setListProp(bean.getEmbeddedProp().getListProp());
+            expected.getEmbeddedProp().setMapProp(bean.getEmbeddedProp().getMapProp());
+            ParentBean actualBean = _parentBeanDao.get(i, null, options);
+            assertEquals(expected, actualBean);
+        }
+
     }
     
     @Test

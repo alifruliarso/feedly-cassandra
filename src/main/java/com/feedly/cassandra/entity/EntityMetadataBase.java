@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.TreeSet;
 
@@ -19,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.feedly.cassandra.anno.Column;
+import com.feedly.cassandra.anno.UnmappedColumnHandler;
 
 /**
  * This class holds metadata for a given entity including key, property and index information.
@@ -37,6 +39,7 @@ public class EntityMetadataBase<V>
     private final Class<V> _clazz;
     private final Map<PropertyMetadataBase, Integer> _propPositions;
     private final boolean _useCompositeColumns;
+    private final MapPropertyMetadata _unmappedHandler;
 
     @SuppressWarnings("unchecked")
     public EntityMetadataBase(Class<V> clazz, boolean useCompositeColumns)
@@ -47,11 +50,27 @@ public class EntityMetadataBase<V>
         Map<String, PropertyMetadataBase> props = new TreeMap<String, PropertyMetadataBase>(); 
         Map<String, PropertyMetadataBase>  propsByPhysical = new TreeMap<String, PropertyMetadataBase>();
         Map<String, Set<PropertyMetadataBase>> propsByAnno = new TreeMap<String, Set<PropertyMetadataBase>>();
-        
+        MapPropertyMetadata unmappedHandler = null;
+
         for(Field f : clazz.getDeclaredFields())
         {
             Method getter = getGetter(f);
             Method setter = getSetter(f);
+
+            if(f.isAnnotationPresent(UnmappedColumnHandler.class))
+            {
+                if(unmappedHandler != null)
+                    throw new IllegalArgumentException("@UnmappedColumnHandler may only be used on one field.");
+
+                if(!Map.class.equals(f.getType()) && !SortedMap.class.equals(f.getType()))
+                    throw new IllegalArgumentException("@UnmappedColumnHandler may only be used on a Map or SortedMap, not sub-interfaces or classes.");
+
+                if(getter == null || setter == null)
+                    throw new IllegalArgumentException("@UnmappedColumnHandler field must have valid getter and setter.");
+
+                UnmappedColumnHandler anno = f.getAnnotation(UnmappedColumnHandler.class);
+                unmappedHandler = (MapPropertyMetadata) PropertyMetadataFactory.buildPropertyMetadata(f, null, getter, setter, (Class<? extends Serializer<?>>) anno.value(), useCompositeColumns());
+            }
 
             if(f.isAnnotationPresent(Column.class))
             {
@@ -59,7 +78,7 @@ public class EntityMetadataBase<V>
                     throw new IllegalArgumentException("@Column field must have valid getter and setter.");
 
                 Column anno = f.getAnnotation(Column.class);
-                String col = anno.col();
+                String col = anno.name();
                 if(col.equals(""))
                     col = f.getName();
                 
@@ -83,6 +102,8 @@ public class EntityMetadataBase<V>
                 }
             }
         }
+
+        _unmappedHandler = unmappedHandler;
 
         for(Entry<String, Set<PropertyMetadataBase>> annos : propsByAnno.entrySet())
             annos.setValue(Collections.unmodifiableSet(annos.getValue()));
@@ -184,6 +205,11 @@ public class EntityMetadataBase<V>
     public boolean useCompositeColumns()
     {
         return _useCompositeColumns;
+    }
+
+    public MapPropertyMetadata getUnmappedHandler()
+    {
+        return _unmappedHandler;
     }
     
     @Override

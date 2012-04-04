@@ -18,19 +18,19 @@ public class SampleBean2 implements Cloneable, Comparable<SampleBean2>
     @RowKey
     private Long rowKey;
     
-    @Column(col="s", hashIndexed=true)
+    @Column(name="s", hashIndexed=true)
     private String strVal;
     
     @Column
     private int intVal;
     
-    @Column(col="l")
+    @Column(name="l")
     private long longVal;
 
     @Column
     private float floatVal;
 
-    @Column(col="d")
+    @Column(name="d")
     private double doubleVal;
     
     @Column

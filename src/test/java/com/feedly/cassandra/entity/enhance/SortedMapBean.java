@@ -19,7 +19,7 @@ public class SortedMapBean implements Comparable<SortedMapBean>
     @Column
     private String strProp;
     
-    @Column(col="m")
+    @Column(name="m")
     private SortedMap<String, Object> mapProp;
 
     public Long getRowkey()

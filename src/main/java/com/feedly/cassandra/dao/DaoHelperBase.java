@@ -1,11 +1,8 @@
 package com.feedly.cassandra.dao;
 
 import java.math.BigInteger;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashSet;
+import java.util.Collection;
 import java.util.List;
-import java.util.Set;
 
 import me.prettyprint.cassandra.serializers.BytesArraySerializer;
 import me.prettyprint.cassandra.serializers.DynamicCompositeSerializer;
@@ -33,11 +30,6 @@ abstract class DaoHelperBase<K,V>
     protected static final StringSerializer SER_STRING = StringSerializer.get();
     protected static final DynamicCompositeSerializer SER_COMPOSITE = new DynamicCompositeSerializer();
 
-    private static final Set<EPropertyType> COLLECTION_PROPS = 
-            Collections.unmodifiableSet(new HashSet<EPropertyType>(Arrays.asList(new EPropertyType[] {EPropertyType.LIST, 
-                    EPropertyType.MAP, 
-                    EPropertyType.SORTED_MAP})));
-
     protected final EntityMetadata<V> _entityMeta;
     protected IKeyspaceFactory _keyspaceFactory;
 
@@ -47,9 +39,9 @@ abstract class DaoHelperBase<K,V>
         _keyspaceFactory = factory;
     }
     
-    protected static boolean isCollectionProp(PropertyMetadataBase pmb)
+    protected static boolean isSimpleProp(PropertyMetadataBase pmb)
     {
-        return COLLECTION_PROPS.contains(pmb.getPropertyType());
+        return pmb.getPropertyType() == EPropertyType.SIMPLE;
     }
     
     /**
@@ -62,7 +54,7 @@ abstract class DaoHelperBase<K,V>
     {
         PropertyMetadataBase pm = _entityMeta.getProperty(cp.getProperty());
         
-        if(pm == null || !isCollectionProp(pm))
+        if(pm == null || isSimpleProp(pm))
             throw new IllegalArgumentException("property " + cp.getProperty() + " is not a collection");
 
         if(pm.getPropertyType() == EPropertyType.LIST && !(cp.getKey() instanceof Integer))
@@ -124,7 +116,7 @@ abstract class DaoHelperBase<K,V>
     }
     
 
-    protected IEnhancedEntity asEntity(V value)
+    protected IEnhancedEntity asEntity(Object value)
     {
         try
         {
@@ -137,7 +129,19 @@ abstract class DaoHelperBase<K,V>
         }
     }
     
-    protected Object invokeGetter(PropertyMetadataBase pm, V obj)
+
+    protected void resetEntities(Collection<?> entities)
+    {
+        for(Object value : entities)
+        {
+            IEnhancedEntity entity = asEntity(value);
+            entity.getModifiedFields().clear();
+            entity.setUnmappedFieldsModified(false);
+        }
+    }
+    
+    
+    protected Object invokeGetter(PropertyMetadataBase pm, Object obj)
     {
         try
         {
@@ -149,15 +153,15 @@ abstract class DaoHelperBase<K,V>
         }
     }
 
-    protected void invokeSetter(PropertyMetadataBase pm, V obj, Object value)
+    protected void invokeSetter(PropertyMetadataBase pm, Object obj, Object propertyValue)
     {
         try
         {
-            pm.getSetter().invoke(obj, value);
+            pm.getSetter().invoke(obj, propertyValue);
         }
         catch(Exception e)
         {
-            throw new IllegalArgumentException("unexpected error invoking " + pm.getGetter(), e);
+            throw new IllegalArgumentException("unexpected error invoking " + pm.getSetter() + " with " + propertyValue, e);
         }
     }
     

@@ -22,10 +22,10 @@ import com.feedly.cassandra.entity.ByteIndicatorSerializer;
 public @interface Column
 {
     /**
-     * The physical column name to use in cassandra.
+     * The physical column name to use in cassandra, defaults to the field name. Typically a very short name is used to save storage space.
      * @return the column name
      */
-    public String col() default "";
+    public String name() default "";
     
     /**
      * the serializer to use for this property. Using the default value indicates an appropriate serializer should be detected at runtime.

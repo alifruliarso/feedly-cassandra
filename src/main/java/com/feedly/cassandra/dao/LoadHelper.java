@@ -25,11 +25,12 @@ import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.entity.ByteIndicatorSerializer;
 import com.feedly.cassandra.entity.EPropertyType;
 import com.feedly.cassandra.entity.EntityMetadata;
+import com.feedly.cassandra.entity.EntityMetadataBase;
 import com.feedly.cassandra.entity.ListPropertyMetadata;
 import com.feedly.cassandra.entity.MapPropertyMetadata;
+import com.feedly.cassandra.entity.ObjectPropertyMetadata;
 import com.feedly.cassandra.entity.PropertyMetadataBase;
 import com.feedly.cassandra.entity.SimplePropertyMetadata;
-import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 
 abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
 {
@@ -39,6 +40,23 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
         super(meta, factory);
     }
     
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> createUmappedHandlerMap(MapPropertyMetadata pm, Object entity)
+    {
+        Map<String, Object> unmapped = (Map<String, Object>) invokeGetter(pm, entity);
+
+        if(unmapped == null)
+        {
+            if(pm.getFieldType().equals(Map.class))
+                unmapped = new HashMap<String, Object>();
+            else
+                unmapped = new TreeMap<String, Object>();
+        }
+        
+        return unmapped;
+    }
+    
+
     /**
      * load properties into an entity from a cassandra row's columns
      * @param key the row key
@@ -47,7 +65,6 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
      * @param columns the columns used for update
      * @return the entity
      */
-    @SuppressWarnings("unchecked")
     protected V loadValueProperties(K key, V value, SimplePropertyMetadata keyMeta, List<HColumn<byte[], byte[]>> columns)
     {
         if(columns.isEmpty())
@@ -64,115 +81,185 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
         }
 
         
-        Map<Object, Object> unmapped = null;
-        Map<String, Object> collections = null; //cache the collections to avoid reflection invocations in loop
+        Map<String, Object> unmapped = null;
+        Map<String, Object> containers = null; //cache the containers to avoid reflection invocations in loop
         if(_entityMeta.useCompositeColumns())
-            collections = new HashMap<String, Object>();
-        
+            containers = new HashMap<String,Object>();
         if(_entityMeta.getUnmappedHandler() != null)
-            unmapped = (Map<Object, Object>) invokeGetter(_entityMeta.getUnmappedHandler(), value);
-        
+        {
+            unmapped = createUmappedHandlerMap(_entityMeta.getUnmappedHandler(), value);
+        }
         int size = columns.size();
+        
+        StringBuilder descriptor = null;
+        if(_logger.isTraceEnabled())
+        {
+            descriptor = new StringBuilder();
+            descriptor.append(_entityMeta.getType().getSimpleName());
+            descriptor.append("[").append(key).append("]");
+        }
+
+        Set<Object> entities = new HashSet<Object>();
         for(int i = 0; i < size; i++)
         {
             HColumn<byte[], byte[]> col = columns.get(i);
-            String pname = null;
-            DynamicComposite collectionKey = null;
-            if(_entityMeta.useCompositeColumns())
-            {
-                collectionKey = SER_COMPOSITE.fromBytes(col.getName());
-                pname = (String) collectionKey.get(0);
-            }
-            else
-                pname = SER_STRING.fromBytes(col.getName());
-            
-            PropertyMetadataBase pm = _entityMeta.getPropertyByPhysicalName(pname);
+            Object colName= _entityMeta.useCompositeColumns() ? SER_COMPOSITE.fromBytes(col.getName()) : SER_STRING.fromBytes(col.getName());
 
-            if(pm == null)
-            {
-                unmapped = loadUnmappedProperty(key, value, pname, col, unmapped);
-            }
-            else
-            {
-                EPropertyType t = pm.getPropertyType();
-                if(t == EPropertyType.SIMPLE)
-                {
-                    loadSimpleProperty(key, value, col, pname, (SimplePropertyMetadata) pm);
-                }
-                else
-                {
-                    StringBuilder descriptor = null;
-                    if(_logger.isTraceEnabled())
-                    {
-                        descriptor = new StringBuilder();
-                        descriptor.append(_entityMeta.getType().getSimpleName());
-                        descriptor.append("[").append(key).append("]").append(".").append(pname);
-                        
-                    }
-                    if(pm.getPropertyType() == EPropertyType.LIST)
-                    {
-                        List<Object> l = (List<Object>) collections.get(pname);
-                        if(l == null)
-                        {
-                            l = (List<Object>) invokeGetter(pm, value);
-                            
-                            if(l == null)
-                            {
-                                l = new ArrayList<Object>();
-                                invokeSetter(pm, value, l);
-                            }
-                            collections.put(pname, l);
-                        }
-                        loadListProperty(descriptor, collectionKey, col.getValue(), l, 1, (ListPropertyMetadata) pm);
-                    }
-                    else
-                    {
-                        Map<Object, Object> m = (Map<Object, Object>) collections.get(pname);
-                        if(m == null)
-                        {
-                            m = (Map<Object, Object>) invokeGetter(pm, value);
-                            
-                            if(m == null)
-                            {
-                                if(pm.getPropertyType() == EPropertyType.SORTED_MAP)
-                                    m = new TreeMap<Object, Object>();
-                                else
-                                    m = new HashMap<Object, Object>();
-                                
-                                invokeSetter(pm, value, m);
-                            }
-                            
-                            collections.put(pname, m);
-                        }
-                        
-                        loadMapProperty(descriptor, collectionKey, col.getValue(), m, 1, (MapPropertyMetadata) pm);
-                    }
-                }
-            }
+            loadValueProperty(descriptor, value, _entityMeta, 0, colName, col.getValue(), entities, unmapped, containers);
         }
+
+        if(unmapped != null && !unmapped.isEmpty())
+            invokeSetter(_entityMeta.getUnmappedHandler(), value, unmapped);
 
         invokeSetter(keyMeta, value, key);
 
-        IEnhancedEntity entity = asEntity(value);
-        entity.getModifiedFields().clear();
-        entity.setUnmappedFieldsModified(false);
+        entities.add(value);
+        resetEntities(entities);
+        
         
         return value;
     }
 
+    @SuppressWarnings("unchecked")
+    private void loadValueProperty(StringBuilder descriptor,
+                                   Object value,
+                                   EntityMetadataBase<?> entityMeta,
+                                   int colNameIdx,
+                                   Object colName,
+                                   byte[] colVal, 
+                                   Set<Object> entities, 
+                                   Map<String, Object> unmapped, 
+                                   Map<String, Object> containers)
+    {
+        String pname = null;
+        DynamicComposite compositeColName = null;
+        if(colName instanceof DynamicComposite)
+        {
+            compositeColName = (DynamicComposite) colName;
+            pname = (String) compositeColName.get(colNameIdx);
+        }
+        else
+            pname = (String) colName;
+        
+        PropertyMetadataBase pm = entityMeta.getPropertyByPhysicalName(pname);
+
+        if(pm == null)
+        {
+            if(entityMeta.getUnmappedHandler() != null)
+            {
+                if(unmapped == null)
+                {
+                    unmapped = createUmappedHandlerMap(entityMeta.getUnmappedHandler(), value);
+                    invokeSetter(entityMeta.getUnmappedHandler(), value, unmapped);
+                }
+                
+                loadUnmappedProperty(descriptor, entityMeta.getUnmappedHandler(), value, pname, colVal, unmapped);
+            }
+            else
+                _logger.info("unmapped value for {}.{}, skipping", descriptor, pname);
+        }
+        else
+        {
+            EPropertyType t = pm.getPropertyType();
+            if(t == EPropertyType.SIMPLE)
+            {
+                loadSimpleProperty(descriptor, value, colVal, pname, (SimplePropertyMetadata) pm);
+            }
+            else
+            {
+                if(descriptor != null)
+                    descriptor.append(".").append(pm.getName());
+                
+                if(t == EPropertyType.MAP || t == EPropertyType.SORTED_MAP)
+                {
+                    Map<Object, Object> m = containers != null ? (Map<Object, Object>) containers.get(pname) : null;
+                    if(m == null)
+                    {
+                        m = (Map<Object, Object>) invokeGetter(pm, value);
+                        
+                        if(m == null)
+                        {
+                            if(t == EPropertyType.SORTED_MAP)
+                                m = new TreeMap<Object, Object>();
+                            else
+                                m = new HashMap<Object, Object>();
+                            
+                            invokeSetter(pm, value, m);
+                        }
+                        
+                        if(containers != null)
+                            containers.put(pname, m);
+                    }
+                    
+                    loadMapProperty(descriptor, compositeColName, colVal, m, colNameIdx+1, (MapPropertyMetadata) pm, entities);
+                }
+                else if(t == EPropertyType.LIST)
+                {
+                    List<Object> l = containers != null ? (List<Object>) containers.get(pname) : null;
+                    if(l == null)
+                    {
+                        l = (List<Object>) invokeGetter(pm, value);
+                        
+                        if(l == null)
+                        {
+                            l = new ArrayList<Object>();
+                            invokeSetter(pm, value, l);
+                        }
+                        
+                        if(containers != null)
+                            containers.put(pname, l);
+                    }
+                    loadListProperty(descriptor, compositeColName, colVal, l, colNameIdx+1, (ListPropertyMetadata) pm, entities);
+                }
+                else //OBJECT
+                {
+                    ObjectPropertyMetadata opm = (ObjectPropertyMetadata) pm;
+                    Object e = containers != null ? containers.get(pname) : null;
+                    if(e == null)
+                    {
+                        e = invokeGetter(pm, value);
+                        
+                        if(e == null)
+                        {
+                            e = opm.newInstance();
+                            invokeSetter(pm, value, e);
+                            entities.add(e);
+                        }
+                        
+                        if(containers != null)
+                            containers.put(pname, e);
+                    }
+                    
+                    loadValueProperty(descriptor, e, opm.getObjectMetadata(), colNameIdx+1, colName, colVal, entities, null, null);
+                }
+                
+                if(descriptor != null)
+                {
+                    int len = descriptor.length();
+                    descriptor.delete(len - (pm.getName().length() + 1), len);
+                }
+            }
+        }
+    }
+    
     @SuppressWarnings("unchecked")
     private void loadMapProperty(StringBuilder descriptor, 
                                  DynamicComposite colName,
                                  byte[] colValue,
                                  Map<Object, Object> map,
                                  int colIdx,
-                                 MapPropertyMetadata pm)
+                                 MapPropertyMetadata pm,
+                                 Set<Object> entities)
     {
         SimplePropertyMetadata keyMeta = pm.getKeyPropertyMetadata();
         PropertyMetadataBase valueMeta = pm.getValuePropertyMetadata();
         Object key = colName.get(colIdx, keyMeta.getSerializer());
         
-        
+        if(descriptor != null)
+        {
+            descriptor.append(".").append(key);
+        }
+
         EPropertyType t = valueMeta.getPropertyType();
         if(t == EPropertyType.SIMPLE)
         {
@@ -180,17 +267,6 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
 
             _logger.trace("{} = {}", descriptor, pval);
             map.put(key, pval); 
-        }
-        else if(t == EPropertyType.LIST)
-        {
-            List<Object> subList = (List<Object>) map.get(key);
-            if(subList == null)
-            {
-                subList = new ArrayList<Object>();
-                map.put(key, subList);
-            }
-            loadListProperty(descriptor, colName, colValue, subList, colIdx+1, (ListPropertyMetadata) valueMeta);
-            map.put(key, subList);
         }
         else if(t == EPropertyType.MAP || t == EPropertyType.SORTED_MAP)
         {
@@ -204,8 +280,38 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
                 map.put(key, subMap);
             }
             
-            loadMapProperty(descriptor, colName, colValue, subMap, colIdx+1, (MapPropertyMetadata) valueMeta);
+            loadMapProperty(descriptor, colName, colValue, subMap, colIdx+1, (MapPropertyMetadata) valueMeta, entities);
         }
+        else if(t == EPropertyType.LIST)
+        {
+            List<Object> subList = (List<Object>) map.get(key);
+            if(subList == null)
+            {
+                subList = new ArrayList<Object>();
+                map.put(key, subList);
+            }
+            loadListProperty(descriptor, colName, colValue, subList, colIdx+1, (ListPropertyMetadata) valueMeta, entities);
+            map.put(key, subList);
+        }
+        else //OBJECT
+        {
+            ObjectPropertyMetadata opm = (ObjectPropertyMetadata) valueMeta;
+            Object e = map.get(key);
+            if(e == null)
+            {
+                e = opm.newInstance();
+                entities.add(e);
+                map.put(key, e);
+            }
+            
+            loadValueProperty(descriptor, e, opm.getObjectMetadata(), colIdx+1, colName, colValue, entities, null, null);
+        }
+        if(descriptor != null)
+        {
+            int len = descriptor.length();
+            descriptor.delete(len - (String.valueOf(key).length() + 1), len);
+        }
+
     }
 
     @SuppressWarnings("unchecked")
@@ -214,7 +320,8 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
                                   byte[] colValue,
                                   List<Object> list,
                                   int colIdx,
-                                  ListPropertyMetadata pm)
+                                  ListPropertyMetadata pm,
+                                  Set<Object> entities)
     {
         PropertyMetadataBase elementMeta = pm.getElementPropertyMetadata();
         int idx = colName.get(colIdx, BigIntegerSerializer.get()).intValue();
@@ -234,6 +341,25 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
             _logger.trace("{} = {}", descriptor, pval);
             list.add(pval); 
         }
+        else if(t == EPropertyType.MAP || t == EPropertyType.SORTED_MAP)
+        {
+            Map<Object, Object> subMap; 
+            if(list.size() > idx)
+            {
+                subMap = (Map<Object, Object>) list.get(idx);
+                if(subMap == null)
+                {
+                    subMap = t == EPropertyType.MAP ? new HashMap<Object, Object>() : new TreeMap<Object, Object>();
+                    list.set(idx, subMap);
+                }
+            }
+            else
+            {
+                subMap = t == EPropertyType.MAP ? new HashMap<Object, Object>() : new TreeMap<Object, Object>();
+                list.add(subMap);
+            }
+            loadMapProperty(descriptor, colName, colValue, subMap, colIdx+1, (MapPropertyMetadata) elementMeta, entities);
+        }
         else if(t == EPropertyType.LIST)
         {
             List<Object> sublist; 
@@ -252,78 +378,72 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
                 list.add(sublist);
             }
             
-            loadListProperty(descriptor, colName, colValue, sublist, colIdx+1, (ListPropertyMetadata) elementMeta);
+            loadListProperty(descriptor, colName, colValue, sublist, colIdx+1, (ListPropertyMetadata) elementMeta, entities);
         }
-        else if(t == EPropertyType.MAP || t == EPropertyType.SORTED_MAP)
+        else //OBJECT
         {
-            Map<Object, Object> subMap; 
+            ObjectPropertyMetadata opm = (ObjectPropertyMetadata) elementMeta;
+            Object e;
             if(list.size() > idx)
             {
-                subMap = (Map<Object, Object>) list.get(idx);
-                if(subMap == null)
+                e = list.get(idx);
+                if(e == null)
                 {
-                    subMap = t == EPropertyType.MAP ? new HashMap<Object, Object>() : new TreeMap<Object, Object>();
-                    list.set(idx, subMap);
+                    e = opm.newInstance();
+                    list.set(idx, e);
                 }
             }
             else
             {
-                subMap = t == EPropertyType.MAP ? new HashMap<Object, Object>() : new TreeMap<Object, Object>();
-                list.add(subMap);
+                e = opm.newInstance();
+                entities.add(e);
+                list.add(e);
             }
-            loadMapProperty(descriptor, colName, colValue, subMap, colIdx+1, (MapPropertyMetadata) elementMeta);
+            
+            loadValueProperty(descriptor, e, opm.getObjectMetadata(), colIdx+1, colName, colValue, entities, null, null);
         }
-    }
-
-    private void loadSimpleProperty(K key, V value, HColumn<byte[], byte[]> col, String pname, SimplePropertyMetadata pm)
-    {
-        Object pval = pm.getSerializer().fromBytes(col.getValue());
-        invokeSetter(pm, value, pval);
-        _logger.trace("{}[{}].{} = {}", new Object[]{_entityMeta.getType().getSimpleName(), key, pname, pval});
-    }
-
-    private Map<Object, Object> loadUnmappedProperty(K key,
-                                                  V value,
-                                                  String pname,
-                                                  HColumn<byte[], byte[]> col,
-                                                  Map<Object, Object> unmapped)
-    {
-        MapPropertyMetadata pm = _entityMeta.getUnmappedHandler();
-        if(pm != null)
+        
+        
+        if(descriptor != null)
         {
-            if(unmapped == null)
-            {
-                if(pm.getFieldType().equals(Map.class))
-                    unmapped = new HashMap<Object, Object>();
-                else
-                    unmapped = new TreeMap<Object, Object>();
-                
-                invokeSetter(pm, value, unmapped);
-            }
-            
-            Serializer<?> valueSer;
-            
-            if(pm.getValuePropertyMetadata().getPropertyType() == EPropertyType.SIMPLE)
-                valueSer = ((SimplePropertyMetadata) pm.getValuePropertyMetadata()).getSerializer();
-            else
-                valueSer = ByteIndicatorSerializer.get();
+            int len = descriptor.length();
+            descriptor.delete(len - (String.valueOf(idx).length() + 2), len);
+        }
 
-            Object pval = valueSer.fromByteBuffer(col.getValueBytes());
-            if(pval != null)
-            {
-                unmapped.put(pname, pval);
-                _logger.trace("{}[{}].{} = {}", new Object[] {_entityMeta.getType().getSimpleName(), key, pname, pval});
-            }
-            else
-            {
-                _logger.info("unrecognized value for {}[{}].{}, skipping", new Object[] { _entityMeta.getType().getSimpleName(), key, pname});
-            }
+    }
+
+    private void loadSimpleProperty(StringBuilder descriptor, Object value, byte[] colVal, String pname, SimplePropertyMetadata pm)
+    {
+        Object pval = pm.getSerializer().fromBytes(colVal);
+        invokeSetter(pm, value, pval);
+        _logger.trace("{}.{} = {}", new Object[]{descriptor, pname, pval});
+    }
+
+    @SuppressWarnings("unchecked")
+    private void loadUnmappedProperty(StringBuilder descriptor,
+                                      MapPropertyMetadata pm,
+                                      Object entity,
+                                      String pname,
+                                      byte[] colValue,
+                                      Map<String, Object> unmapped)
+    {
+        Serializer<?> valueSer;
+        
+        if(pm.getValuePropertyMetadata().getPropertyType() == EPropertyType.SIMPLE)
+            valueSer = ((SimplePropertyMetadata) pm.getValuePropertyMetadata()).getSerializer();
+        else
+            valueSer = ByteIndicatorSerializer.get();
+
+        Object pval = valueSer.fromBytes(colValue);
+        if(pval != null)
+        {
+            unmapped.put(pname, pval);
+            _logger.trace("{}.{} = {}", new Object[] {descriptor, pname, pval});
         }
         else
         {
-            _logger.info("unmapped value for {}[{}].{}, skipping", new Object[] { _entityMeta.getType().getSimpleName(), key, pname});
+            _logger.info("unrecognized value for {}.{}, skipping", new Object[] { descriptor, pname});
         }
-        return unmapped;
     }
 
     
@@ -411,9 +531,9 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
      * @param excludes the columns to exclude
      * @return the collection properties included
      */
-    protected List<PropertyMetadataBase> derivePartialColumns(List<byte[]> colNames, Set<? extends Object> includes, Set<String> excludes)
+    protected List<CollectionRange> derivePartialColumns(List<byte[]> colNames, Set<? extends Object> includes, Set<String> excludes)
     {
-        List<PropertyMetadataBase> fullCollectionProperties = null;
+        List<CollectionRange> ranges = null;
         Set<? extends Object> partialProperties = partialProperties(includes, excludes);
         for(Object property : partialProperties)
         {
@@ -426,12 +546,12 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
                     throw new IllegalArgumentException("unrecognized property " + strProp);
                 
                 //collections need to be handled separately
-                if(pm != null && isCollectionProp(pm))
+                if(pm != null && !isSimpleProp(pm))
                 {
-                    if(fullCollectionProperties == null)
-                        fullCollectionProperties = new ArrayList<PropertyMetadataBase>();
+                    if(ranges == null)
+                        ranges = new ArrayList<CollectionRange>();
                     
-                    fullCollectionProperties.add(pm);
+                    ranges.add(new CollectionRange(pm));
                     continue; 
                 }
                 colNameBytes = pm != null ? pm.getPhysicalNameBytes() : serialize(property, true, null);
@@ -441,6 +561,25 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
                 if(property instanceof CollectionProperty)
                 {
                     CollectionProperty cp = (CollectionProperty) property;
+                    PropertyMetadataBase pm = _entityMeta.getProperty(cp.getProperty());
+                    
+                    boolean rangeRequired = false;
+                    if(pm.getPropertyType() == EPropertyType.OBJECT)
+                        rangeRequired = true;
+                    else if(pm.getPropertyType() == EPropertyType.LIST)
+                        rangeRequired = ((ListPropertyMetadata) pm).getElementPropertyMetadata().getPropertyType() != EPropertyType.SIMPLE;
+                    else if(pm.getPropertyType() == EPropertyType.MAP || pm.getPropertyType() == EPropertyType.SORTED_MAP)
+                        rangeRequired = ((MapPropertyMetadata) pm).getValuePropertyMetadata().getPropertyType() != EPropertyType.SIMPLE;
+                    
+                    if(rangeRequired)
+                    {
+                        if(ranges == null)
+                            ranges = new ArrayList<CollectionRange>();
+
+                        ranges.add(new CollectionRange(pm, cp.getKey()));
+                        continue;
+                    }
+                    
                     colNameBytes = collectionPropertyName(cp, ComponentEquality.EQUAL);
                 }
                 else if(_entityMeta.getUnmappedHandler() == null)
@@ -455,7 +594,7 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
             colNames.add(colNameBytes);
         }        
         
-        return fullCollectionProperties;
+        return ranges;
     }
     
 
@@ -547,26 +686,17 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
      * fetch all the values for a collection property and update entities. 
      * @param keys the entity keys
      * @param values the values to update. if null a new list will be created
-     * @param fullCollectionProperties the properties to fetch
+     * @param ranges the properties to fetch
      * @return the updated values
      */
-    protected List<V> addFullCollectionProperties(List<K> keys, List<V> values, List<PropertyMetadataBase> fullCollectionProperties)
+    protected List<V> addCollectionRanges(List<K> keys, List<V> values, List<CollectionRange> ranges)
     {
-        if(fullCollectionProperties != null)
+        if(ranges != null)
         {
-            for(PropertyMetadataBase pm : fullCollectionProperties)
-            {
-                DynamicComposite dc = new DynamicComposite();
-                dc.addComponent(0, pm.getPhysicalName(), ComponentEquality.EQUAL);
-                byte[] colBytes = SER_COMPOSITE.toBytes(dc);
-                
-                dc = new DynamicComposite();
-                dc.addComponent(0, pm.getPhysicalName(), ComponentEquality.GREATER_THAN_EQUAL); //little strange, this really means the first value greater than... 
-                byte[] colBytesEnd = SER_COMPOSITE.toBytes(dc);
-                
-                values = bulkLoadFromMultiGet(keys, values, null, colBytes, colBytesEnd, true);
-            }
+            for(CollectionRange r : ranges)
+                values = bulkLoadFromMultiGet(keys, values, null, r.startBytes(), r.endBytes(), true);
         }
+
         return values;
     }
     

@@ -13,10 +13,10 @@ public class CompositeIndexedBean implements Comparable<CompositeIndexedBean>
     @RowKey
     private Long rowKey;
     
-    @Column(col="c")
+    @Column(name="c")
     private Character charVal;
 
-    @Column(col="s", hashIndexed = true)
+    @Column(name="s", hashIndexed = true)
     private String strVal;
     
     @Column(hashIndexed=true)

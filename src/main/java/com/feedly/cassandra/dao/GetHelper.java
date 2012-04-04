@@ -11,7 +11,6 @@ import java.util.Set;
 
 import me.prettyprint.hector.api.Serializer;
 import me.prettyprint.hector.api.beans.AbstractComposite.ComponentEquality;
-import me.prettyprint.hector.api.beans.DynamicComposite;
 import me.prettyprint.hector.api.beans.OrderedRows;
 import me.prettyprint.hector.api.beans.Row;
 import me.prettyprint.hector.api.factory.HFactory;
@@ -21,7 +20,6 @@ import me.prettyprint.hector.api.query.SliceQuery;
 
 import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.entity.EntityMetadata;
-import com.feedly.cassandra.entity.PropertyMetadataBase;
 import com.feedly.cassandra.entity.SimplePropertyMetadata;
 
 /*
@@ -59,24 +57,14 @@ class GetHelper<K, V> extends LoadHelper<K, V>
             throw new IllegalArgumentException("either includes or excludes should be specified, not both");
 
         List<byte[]> colNames = new ArrayList<byte[]>();
-        List<PropertyMetadataBase> fullCollectionProperties = derivePartialColumns(colNames, includes, excludes);
+        List<CollectionRange> ranges = derivePartialColumns(colNames, includes, excludes);
 
         value = loadFromGet(key, value, colNames, null, null);
-
-        if(fullCollectionProperties != null)
+        
+        if(ranges != null)
         {
-            for(PropertyMetadataBase pm : fullCollectionProperties)
-            {
-                DynamicComposite dc = new DynamicComposite();
-                dc.addComponent(0, pm.getName(), ComponentEquality.EQUAL);
-                byte[] colBytes = SER_COMPOSITE.toBytes(dc);
-                dc = new DynamicComposite();
-                dc.addComponent(0, pm.getName(), ComponentEquality.GREATER_THAN_EQUAL); // little strange, this really means the first value
-                                                                                        // greater than...
-                byte[] colBytesEnd = SER_COMPOSITE.toBytes(dc);
-
-                value = loadFromGet(key, value, null, colBytes, colBytesEnd);
-            }
+            for(CollectionRange r : ranges)
+                value = loadFromGet(key, value, null, r.startBytes(), r.endBytes());
         }
 
         return value;
@@ -124,11 +112,11 @@ class GetHelper<K, V> extends LoadHelper<K, V>
             throw new IllegalArgumentException("includes or excludes should be specified");
 
         List<byte[]> colNames = new ArrayList<byte[]>();
-        List<PropertyMetadataBase> fullCollectionProperties = derivePartialColumns(colNames, includes, excludes);
+        List<CollectionRange> fullCollectionProperties = derivePartialColumns(colNames, includes, excludes);
 
         values = bulkLoadFromMultiGet(keys, values, colNames, null, null, true);
 
-        return addFullCollectionProperties(keys, values, fullCollectionProperties);
+        return addCollectionRanges(keys, values, fullCollectionProperties);
     }
 
     @SuppressWarnings({ "rawtypes", "unchecked" })
@@ -154,7 +142,7 @@ class GetHelper<K, V> extends LoadHelper<K, V>
     private byte[] fetch(RangeSlicesQuery<byte[], byte[], byte[]> query, byte[] start, GetOptions options, List<V> values)
     {
         List<K> keys = null;
-        List<PropertyMetadataBase> fullCollectionProperties = null;
+        List<CollectionRange> ranges = null;
         values.clear();
         byte[] endCol = null;
         switch(options.getColumnFilterStrategy())
@@ -169,8 +157,8 @@ class GetHelper<K, V> extends LoadHelper<K, V>
                     throw new IllegalArgumentException("either includes or excludes should be specified");
 
                 List<byte[]> colNames = new ArrayList<byte[]>();
-                fullCollectionProperties = derivePartialColumns(colNames, includes, excludes);
-                if(fullCollectionProperties != null)
+                ranges = derivePartialColumns(colNames, includes, excludes);
+                if(ranges != null)
                     keys = new ArrayList<K>();
                 
                 query.setColumnNames(colNames.toArray(new byte[colNames.size()][]));
@@ -220,7 +208,7 @@ class GetHelper<K, V> extends LoadHelper<K, V>
         if(cnt == 0)
             return null;
         else if(keys != null)
-            addFullCollectionProperties(keys, values, fullCollectionProperties);
+            addCollectionRanges(keys, values, ranges);
 
         return cnt == 0 ? null : rows.getList().get(cnt - 1).getKey();
     }

@@ -6,22 +6,22 @@ import java.util.Date;
 import com.feedly.cassandra.anno.Column;
 import com.feedly.cassandra.anno.ColumnFamily;
 
-@ColumnFamily(name="sample", compressed=false)
+@ColumnFamily(name="embedded", compressed=false)
 public class EmbeddedBean implements Cloneable
 {
-    @Column(col="s")
+    @Column(name="s")
     private String strVal;
     
     @Column
     private int intVal;
     
-    @Column(col="l")
+    @Column(name="l")
     private long longVal;
 
     @Column
     private float floatVal;
 
-    @Column(col="d")
+    @Column(name="d")
     private double doubleVal;
     
     @Column

@@ -17,19 +17,19 @@ public class SampleBean implements Cloneable, Comparable<SampleBean>
     @RowKey
     private Long rowKey;
     
-    @Column(col="s")
+    @Column(name="s")
     private String strVal;
     
     @Column
     private int intVal;
     
-    @Column(col="l")
+    @Column(name="l")
     private long longVal;
 
     @Column
     private float floatVal;
 
-    @Column(col="d")
+    @Column(name="d")
     private double doubleVal;
     
     @Column

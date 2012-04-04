@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.SortedMap;
 
 import me.prettyprint.hector.api.Serializer;
 
@@ -39,7 +38,6 @@ public class EntityMetadata<V> extends EntityMetadataBase<V>
     
     private final Set<Annotation> _annotations;
     private final SimplePropertyMetadata _keyMeta;
-    private final MapPropertyMetadata _unmappedHandler;
     private final String _familyName;
     private final String _walFamilyName;
     private final String _idxFamilyName;
@@ -69,8 +67,6 @@ public class EntityMetadata<V> extends EntityMetadataBase<V>
         List<IndexMetadata> indexes = new ArrayList<IndexMetadata>();
         Map<SimplePropertyMetadata, List<IndexMetadata>> indexesByProp = new HashMap<SimplePropertyMetadata, List<IndexMetadata>>();
         SimplePropertyMetadata keyMeta = null;
-        MapPropertyMetadata unmappedHandler = null;
-        
         
         for(Field f : clazz.getDeclaredFields())
         {
@@ -91,27 +87,10 @@ public class EntityMetadata<V> extends EntityMetadataBase<V>
                 keyMeta = PropertyMetadataFactory.buildSimplePropertyMetadata(f, null, getter, setter, (Class<? extends Serializer<?>>) anno.value(), false);
             }
 
-            if(f.isAnnotationPresent(UnmappedColumnHandler.class))
-            {
-                Method getter = getGetter(f);
-                Method setter = getSetter(f);
-                if(unmappedHandler != null)
-                    throw new IllegalArgumentException("@UnmappedColumnHandler may only be used on one field.");
-
-                if(!Map.class.equals(f.getType()) && !SortedMap.class.equals(f.getType()))
-                    throw new IllegalArgumentException("@UnmappedColumnHandler may only be used on a Map or SortedMap, not sub-interfaces or classes.");
-
-                if(getter == null || setter == null)
-                    throw new IllegalArgumentException("@UnmappedColumnHandler field must have valid getter and setter.");
-
-                UnmappedColumnHandler anno = f.getAnnotation(UnmappedColumnHandler.class);
-                unmappedHandler = (MapPropertyMetadata) PropertyMetadataFactory.buildPropertyMetadata(f, null, getter, setter, (Class<? extends Serializer<?>>) anno.value(), useCompositeColumns());
-            }
-
             if(f.isAnnotationPresent(Column.class))
             {
                 Column anno = f.getAnnotation(Column.class);
-                String col = anno.col();
+                String col = anno.name();
                 if(col.equals(""))
                     col = f.getName();
                 
@@ -148,8 +127,6 @@ public class EntityMetadata<V> extends EntityMetadataBase<V>
                 }
             }
         }
-        
-        _unmappedHandler = unmappedHandler;
         
         if(keyMeta == null)
             throw new IllegalArgumentException("missing @RowKey annotated field");
@@ -280,12 +257,6 @@ public class EntityMetadata<V> extends EntityMetadataBase<V>
     {
         return _keyMeta;
     }
-
-    public MapPropertyMetadata getUnmappedHandler()
-    {
-        return _unmappedHandler;
-    }
-
     
     public String getFamilyName()
     {
