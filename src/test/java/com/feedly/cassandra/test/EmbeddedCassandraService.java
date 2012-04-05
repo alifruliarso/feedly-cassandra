@@ -7,8 +7,9 @@ import org.apache.thrift.transport.TTransportException;
 
 public class EmbeddedCassandraService implements Runnable
 {
-    CassandraDaemon cassandraDaemon;
-    boolean started = false;
+    private CassandraDaemon cassandraDaemon;
+    private boolean started = false;
+    
     public void init() throws TTransportException, IOException
     {
         cassandraDaemon = new CassandraDaemon();
@@ -20,7 +21,7 @@ public class EmbeddedCassandraService implements Runnable
         cassandraDaemon.start();
     }
     
-    public synchronized boolean cleanStart() throws TTransportException, IOException, InterruptedException
+    public synchronized boolean cleanStart(String keyspace, String snapshotFile) throws TTransportException, IOException, InterruptedException
     {
         if(started)
         {
@@ -35,7 +36,7 @@ public class EmbeddedCassandraService implements Runnable
         System.setProperty("cassandra.config", "cassandra/conf/cassandra.yaml");
 
         CassandraServiceDataCleaner cleaner = new CassandraServiceDataCleaner();
-        cleaner.prepare();
+        cleaner.prepare(keyspace, snapshotFile);
         init();
         Thread t = new Thread(this);
         t.setDaemon(true);

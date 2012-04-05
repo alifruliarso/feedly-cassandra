@@ -32,6 +32,7 @@ public class CassandraServiceTestBase
     private static EmbeddedCassandraService cassandra;
     protected static Cluster cluster;
     protected static Keyspace keyspace;
+    protected static String snapshotFile;
     
     /**
      * Set embedded cassandra up and spawn it in a new thread.
@@ -46,7 +47,7 @@ public class CassandraServiceTestBase
         try
         {
             cassandra = new EmbeddedCassandraService();
-            boolean started = cassandra.cleanStart();
+            boolean started = cassandra.cleanStart(KEYSPACE, snapshotFile);
             
             if (started)
             {
