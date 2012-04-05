@@ -81,7 +81,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
             SaveStatus status = saveDirtyFields(descriptor, _entityMeta.getUnmappedHandler(), _entityMeta.getProperties(), key, keyBytes, value, clock, mutator, null, false);
             overallStatus.merge(status);
             if(status.updateCnt == 0)
-                _logger.info("no updates for ", key);
+                _logger.info("no updates for {}[{}]", _entityMeta.getType().getSimpleName(), key);
             
             _logger.debug("updated {} values for {}[{}]", new Object[] { status.updateCnt, _entityMeta.getType().getSimpleName(), key });
             
