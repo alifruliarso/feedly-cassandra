@@ -157,9 +157,6 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
         {
             _staleValueStrategy.handle(_entityMeta, index, filtered);
             
-            for(StaleIndexValue f : filtered)
-                _logger.trace("filtered rowkey: " +  f.getColumnName().get(1));
-            
             _logger.info("filtered {} stale values from index [{}]. {} excluded, retained {}", 
                          new Object[] { filtered.size(), index, excludedCnt, rv.size() });
         }
