@@ -9,6 +9,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
 
@@ -84,71 +85,81 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
     }
 
 
-    private List<IndexedValue<V>> filterValues(List<StaleIndexValue> indexValues, List<V> values, IValueFilter<V> filter, IndexMetadata index)
+    private List<IndexedValue<V>> filterValues(RangeIndexQueryResult<K> queryResult, List<V> values, IValueFilter<V> filter, IndexMetadata index)
     {
         List<StaleIndexValue> filtered = null;
         List<IndexedValue<V>> rv = new ArrayList<IndexedValue<V>>();
         int excludedCnt = 0;
-        
+        List<K> keys = queryResult.getCurrentKeys();
+        Map<K, List<StaleIndexValue>> staleValues = queryResult.getCurrentValues();
+
         for(int i = values.size() - 1; i >= 0; i--)
         {
+            K key = keys.get(i);
             V value = values.get(i);
-
-            if(value == null)
+            
+            for(StaleIndexValue staleValue : staleValues.get(key))
             {
-                if(filtered == null)
-                    filtered = new ArrayList<StaleIndexValue>();
-
-                filtered.add(indexValues.get(i));
-            }
-            else
-            {
-                IndexedValue<V> idxValue = indexedValue(value, index);
-                
-                List<Object> idxPropVals = indexValues.get(i).getColumnName();
-                List<Object> rowPropVals = idxValue.getIndexValues();
-
-                EFilterResult result = null;
-                
-                if(rowPropVals.size() != idxPropVals.size() - 1) //last value of index column is row key
-                    result = EFilterResult.FAIL_STALE;
-                else
-                {
-                    for(int j = rowPropVals.size() - 1; j >= 0; j--)
-                    {
-                        Object idxPropVal = idxPropVals.get(j);
-                        if(idxPropVal instanceof ByteBuffer)
-                        {
-                            idxPropVal = index.getIndexedProperties().get(j).getSerializer().fromByteBuffer((ByteBuffer) idxPropVal);
-                        }
-                        if(!idxPropVal.equals(rowPropVals.get(j)))
-                        {
-                            result = EFilterResult.FAIL_STALE;
-                            break;
-                        }
-                    }
-                }
-                
-                if(result == null)
-                    result = filter.isFiltered(idxValue);
-                
-                if(result == EFilterResult.FAIL_STALE)
+                if(value == null)
                 {
                     if(filtered == null)
                         filtered = new ArrayList<StaleIndexValue>();
-
-                    filtered.add(indexValues.get(i));
+                    
+                    filtered.add(staleValue);
                 }
-                else if(result == EFilterResult.PASS)
-                    rv.add(idxValue);
                 else
-                    excludedCnt++;
+                {
+                    IndexedValue<V> idxValue = indexedValue(value, index);
+                    
+                    List<Object> idxPropVals = staleValue.getColumnName();
+                    List<Object> rowPropVals = idxValue.getIndexValues();
+                    
+                    EFilterResult result = null;
+                    
+                    if(rowPropVals.size() != idxPropVals.size() - 1) //last value of index column is row key
+                        result = EFilterResult.FAIL_STALE;
+                    else
+                    {
+                        for(int j = rowPropVals.size() - 1; j >= 0; j--)
+                        {
+                            Object idxPropVal = idxPropVals.get(j);
+                            if(idxPropVal instanceof ByteBuffer)
+                            {
+                                idxPropVal = index.getIndexedProperties().get(j).getSerializer().fromByteBuffer((ByteBuffer) idxPropVal);
+                            }
+                            if(!idxPropVal.equals(rowPropVals.get(j)))
+                            {
+                                result = EFilterResult.FAIL_STALE;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if(result == null)
+                        result = filter.isFiltered(idxValue);
+                    
+                    if(result == EFilterResult.FAIL_STALE)
+                    {
+                        if(filtered == null)
+                            filtered = new ArrayList<StaleIndexValue>();
+                        
+                        filtered.add(staleValue);
+                    }
+                    else if(result == EFilterResult.PASS)
+                        rv.add(idxValue);
+                    else
+                        excludedCnt++;
+                }
             }
         }
         
         if(filtered != null)
         {
             _staleValueStrategy.handle(_entityMeta, index, filtered);
+            
+            for(StaleIndexValue f : filtered)
+                _logger.trace("filtered rowkey: " +  f.getColumnName().get(1));
+            
             _logger.info("filtered {} stale values from index [{}]. {} excluded, retained {}", 
                          new Object[] { filtered.size(), index, excludedCnt, rv.size() });
         }
@@ -243,8 +254,6 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
                                                        IndexMetadata index)
     {
         RangeIndexQueryResult<K> rv = new RangeIndexQueryResult<K>();
-        List<K> currentKeys = rv.getCurrentKeys();
-        List<StaleIndexValue> currentValues = rv.getCurrentValues();
         List<RangeIndexQueryPartitionResult> partitionResults = rv.getPartitionResults();
         
         if(colOrder == EFindOrder.NONE) //can attempt to find all rows at once
@@ -270,8 +279,9 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
                 List<HColumn<DynamicComposite,byte[]>> columns = row.getColumnSlice().getColumns();
                 for(HColumn<DynamicComposite, byte[]> col : columns)
                 {
-                    currentKeys.add((K) col.getName().get(col.getName().size()-1));
-                    currentValues.add(new StaleIndexValue(row.getKey(), col.getName(), col.getClock()));
+                    K k = (K) col.getName().get(col.getName().size()-1);
+                    StaleIndexValue v = new StaleIndexValue(row.getKey(), col.getName(), col.getClock());
+                    rv.add(k, v);
                 }
 
                 
@@ -348,7 +358,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
             }
         }
 
-        _logger.info("initial fetch: index [{}] {} - {}, found {} keys", new Object[]{ index, startCol, endCol, rv.getCurrentKeys().size() });  
+        _logger.info("initial fetch: index [{}] {} - {}, found {} keys", new Object[]{ index, startCol, endCol, rv.getCurrentValues().size() });  
 
         return rv;
     }
@@ -358,8 +368,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
         if(!result.hasMore())
             return;
         
-        result.getCurrentKeys().clear();
-        result.getCurrentValues().clear();
+        result.clearCurrent();
 
         int numPartitions = result.getPartitionResults().size();
         List<RangeIndexQueryPartitionResult> partitionResults = result.getPartitionResults();
@@ -381,8 +390,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
         {
             //no results
             result.setPartitionPos(numPartitions);
-            result.setCurrentKeys(Collections.<K>emptyList());
-            result.setCurrentValues(Collections.<StaleIndexValue>emptyList());
+            result.setCurrentValues(Collections.<K, List<StaleIndexValue>>emptyMap());
         }
 
     }
@@ -422,12 +430,11 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
     
         if(!columns.isEmpty())
         {
-            List<K> keys = result.getCurrentKeys();
-            List<StaleIndexValue> values = result.getCurrentValues();
             for(HColumn<DynamicComposite, byte[]> col : columns)
             {
-                keys.add((K) col.getName().get(col.getName().size()-1));
-                values.add(new StaleIndexValue(p.getPartitionKey(), col.getName(), col.getClock()));
+                K k = (K) col.getName().get(col.getName().size()-1);
+                StaleIndexValue v = new StaleIndexValue(p.getPartitionKey(), col.getName(), col.getClock());
+                result.add(k, v);
             }
 
 
@@ -478,9 +485,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
 
         List<V> rows = _getHelper.mget(result.getCurrentKeys(), null, options);
         
-        
-        
-        List<IndexedValue<V>> values = filterValues(result.getCurrentValues(), rows, filter, index);
+        List<IndexedValue<V>> values = filterValues(result, rows, filter, index);
         rows.clear();
         
         if(!values.isEmpty())
@@ -647,7 +652,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
                 rows = toRows(result, options, order, filter, index);
             }
             
-            if(!result.hasMore() || result.getCurrentKeys().size() >= maxRows)
+            if(!result.hasMore() || result.getCurrentValues().size() >= maxRows)
             {
                 if(rows.size() >= maxRows)
                 {

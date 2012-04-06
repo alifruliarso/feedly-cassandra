@@ -2036,6 +2036,54 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             assertEquals(expected, listActuals.get(i-50));
         }
     }
+
+    @Test
+    public void testRangeIndexUpdate() throws Exception
+    {
+        IndexedBean idxBean = new IndexedBean();
+        idxBean.setRowKey(0L);
+        idxBean.setLongVal(100L);
+        idxBean.setStrVal("sv");
+        idxBean.setStrVal2("sv2");
+        _indexedDao.put(idxBean);
+        
+        idxBean.setStrVal("sv");
+        idxBean.setStrVal2("sv2");
+        idxBean.setLongVal(200L);
+        _indexedDao.put(idxBean);
+
+        IndexedBean start = new IndexedBean(), end = new IndexedBean();
+        
+        //this range will get both values of the index, the stale one and the correct one
+        start.setLongVal(0L);
+        end.setLongVal(500L);
+        
+        Collection<IndexedBean> actuals = _indexedDao.mfindBetween(start, end);
+        assertEquals(1, actuals.size());
+        assertEquals(200L, actuals.iterator().next().getLongVal());
+        
+        assertEquals(1, _indexedStrategy.records.size());
+        assertEquals(1, _indexedStrategy.records.get(0).values.size());
+        assertEquals(100L, _indexedStrategy.records.get(0).values.iterator().next().getColumnName().get(0));
+
+        _indexedStrategy.records.clear();
+        
+        idxBean.setStrVal("sv");
+        idxBean.setStrVal2("sv2");
+        idxBean.setLongVal(300L);
+        _indexedDao.put(idxBean);
+
+        _indexedDao.delete(idxBean.getRowKey());
+
+        assertEquals(0, _indexedDao.mfindBetween(start, end).size());
+        assertEquals(1, _indexedStrategy.records.size());
+        assertEquals(3, _indexedStrategy.records.get(0).values.size()); //strategy is not deleting values from index
+        
+        Iterator<StaleIndexValue> iterator = _indexedStrategy.records.get(0).values.iterator();
+        assertEquals(100L, iterator.next().getColumnName().get(0));
+        assertEquals(200L, iterator.next().getColumnName().get(0));
+        assertEquals(300L, iterator.next().getColumnName().get(0));
+    }
     
     @Test
     public void testRangeIndexFind() throws Exception
