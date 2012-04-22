@@ -247,6 +247,78 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
     }
 
     @Test
+    public void testTtl() throws InterruptedException
+    {
+        /*
+         * simple
+         */
+        SampleBean bean = new SampleBean();
+        bean.setRowKey(10L);
+        bean.setTtlVal(2);
+
+        _dao.put(bean);
+        assertEquals(bean.getTtlVal(), _dao.get(bean.getRowKey()).getTtlVal());
+        
+        Thread.sleep(3000);
+        assertNull(_dao.get(bean.getRowKey()));
+        
+        /*
+         * embedded
+         */
+        EmbeddedBean embedded = new EmbeddedBean();
+        embedded.setStrProp("foo");
+        embedded.setDoubleProp(1.0);
+        ParentBean parent = new ParentBean();
+        parent.setRowkey(10L);
+        parent.setEmbeddedProp(embedded);
+        parent.setListProp(Collections.singletonList(embedded));
+        _parentBeanDao.put(parent);
+        assertEquals(parent, _parentBeanDao.get(parent.getRowkey()));
+        
+        Thread.sleep(3000);
+        ParentBean actual = _parentBeanDao.get(parent.getRowkey()); 
+        assertNull(actual.getListProp().get(0).getStrProp());
+        assertEquals(parent.getEmbeddedProp().getStrProp(), actual.getEmbeddedProp().getStrProp());
+
+        Thread.sleep(2000);
+        actual = _parentBeanDao.get(parent.getRowkey()); 
+        assertNull(actual.getEmbeddedProp());
+        
+        /*
+         * List
+         */
+        ListBean list = new ListBean();
+        list.setRowkey(10L);
+        list.setStrProp("Foo");
+        list.setListProp(Arrays.<Object>asList("foo1", "foo2"));
+        _listDao.put(list);
+        assertEquals(list, _listDao.get(list.getRowkey()));
+
+        Thread.sleep(3000);
+        assertNull(_listDao.get(list.getRowkey()).getListProp());
+        
+        /*
+         * Map
+         */
+        MapBean map = new MapBean();
+        map.setRowkey(10L);
+        map.setStrProp("Foo");
+        map.setMapProp(new HashMap<String, Object>());
+        map.getMapProp().put("key1", "val1");
+        _mapDao.put(map);
+        
+        Thread.sleep(1500);
+        assertEquals(map, _mapDao.get(map.getRowkey()));
+        map.setMapProp(Collections.<String, Object>singletonMap("key2", "val2"));
+        _mapDao.put(map);
+        
+        
+        Thread.sleep(1500);
+        map.getMapProp().remove("key1");
+        assertEquals(map, _mapDao.get(map.getRowkey()));
+    }
+    
+    @Test
     public void testDelete()
     {
         int numBeans = 5;

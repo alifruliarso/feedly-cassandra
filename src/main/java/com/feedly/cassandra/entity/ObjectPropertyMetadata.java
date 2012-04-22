@@ -14,11 +14,12 @@ public class ObjectPropertyMetadata extends PropertyMetadataBase
                                   Class<?> clazz,
                                   Annotation[] annotations,
                                   String physicalName,
+                                  int ttl,
                                   Method getter,
                                   Method setter)
     {
-        super(name, clazz, annotations, physicalName, getter, setter, true, EPropertyType.OBJECT);
-        _objectMetadata = new EmbeddedEntityMetadata(clazz);
+        super(name, clazz, annotations, physicalName, ttl, getter, setter, true, EPropertyType.OBJECT);
+        _objectMetadata = new EmbeddedEntityMetadata(clazz, ttl);
         
         //make sure a no-arg constructor exists;
         try

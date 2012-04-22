@@ -57,12 +57,13 @@ public class PropertyMetadataFactory
 
     public static SimplePropertyMetadata buildSimplePropertyMetadata(Field f,
                                                                      String physicalName,
+                                                                     int ttl,
                                                                      Method getter,
                                                                      Method setter,
                                                                      Class<? extends Serializer<?>> serializerClass,
                                                                      boolean useCompositeKeySerializer)
     {
-        PropertyMetadataBase pm = buildPropertyMetadata(f, physicalName, getter, setter, serializerClass, useCompositeKeySerializer);
+        PropertyMetadataBase pm = buildPropertyMetadata(f, physicalName, ttl, getter, setter, serializerClass, useCompositeKeySerializer);
 
         try
         {
@@ -76,12 +77,13 @@ public class PropertyMetadataFactory
 
     public static PropertyMetadataBase buildPropertyMetadata(Field f,
                                                              String physicalName,
+                                                             int ttl,
                                                              Method getter,
                                                              Method setter,
                                                              Class<? extends Serializer<?>> serializerClass,
                                                              boolean useCompositeKeySerializer)
     {
-        return buildPropertyMetadata(f.getName(), f.getGenericType(), f.getAnnotations(), physicalName, getter, setter, serializerClass, useCompositeKeySerializer);
+        return buildPropertyMetadata(f.getName(), f.getGenericType(), f.getAnnotations(), physicalName, ttl, getter, setter, serializerClass, useCompositeKeySerializer);
     }
 
 
@@ -89,6 +91,7 @@ public class PropertyMetadataFactory
                                                              Type type,
                                                              Annotation[] annotations,
                                                              String physicalName,
+                                                             int ttl,
                                                              Method getter,
                                                              Method setter,
                                                              Class<? extends Serializer<?>> serializerClass,
@@ -100,10 +103,10 @@ public class PropertyMetadataFactory
         {
             Class<?> clazz = (Class<?>) type;
             if(isSimpleType(clazz))
-                return new SimplePropertyMetadata(name, clazz, annotations, physicalName, getter, setter, serializerClass, useCompositeKeySerializer);
+                return new SimplePropertyMetadata(name, clazz, annotations, physicalName, ttl, getter, setter, serializerClass, useCompositeKeySerializer);
             else 
             {
-                return new ObjectPropertyMetadata(name, clazz, annotations, physicalName, getter, setter);
+                return new ObjectPropertyMetadata(name, clazz, annotations, physicalName, ttl, getter, setter);
             }
         }
         else if(type instanceof ParameterizedType)
@@ -112,11 +115,11 @@ public class PropertyMetadataFactory
             Type rawType = ptype.getRawType();
             if(Map.class.equals(rawType) || SortedMap.class.equals(rawType))
             {
-                return new MapPropertyMetadata(name, ptype, annotations, SortedMap.class.equals(rawType), physicalName, getter, setter);
+                return new MapPropertyMetadata(name, ptype, annotations, SortedMap.class.equals(rawType), physicalName, ttl, getter, setter);
             }
             else if(List.class.equals(rawType))
             {
-                return new ListPropertyMetadata(name, ptype, annotations, physicalName, getter, setter);
+                return new ListPropertyMetadata(name, ptype, annotations, physicalName, ttl, getter, setter);
             }
             else
             {

@@ -24,7 +24,7 @@ public class ParentBean implements Comparable<ParentBean>
     @Column(name="s")
     private String strProp;
 
-    @Column(name="e")
+    @Column(name="e", ttl=4)
     private EmbeddedBean embeddedProp;
     
     public List<EmbeddedBean> getListProp()

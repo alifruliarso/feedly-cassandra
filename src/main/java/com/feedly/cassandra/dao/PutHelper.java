@@ -173,6 +173,9 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                         if(propVal != null)
                         {
                             HColumn column = HFactory.createColumn(colBase, propVal, clock, SER_COMPOSITE, (Serializer) spm.getSerializer());
+                            if(spm.isTtlSet())
+                                column.setTtl(spm.ttl());
+                            
                             mutator.addInsertion(keyBytes, _entityMeta.getFamilyName(), column);
                         }
                         else
@@ -186,6 +189,9 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                         if(propVal != null)
                         {
                             HColumn column = HFactory.createColumn(colMeta.getPhysicalNameBytes(), propVal, clock, SER_BYTES, (Serializer) spm.getSerializer());
+                            if(spm.isTtlSet())
+                                column.setTtl(spm.ttl());
+                            
                             mutator.addInsertion(keyBytes, _entityMeta.getFamilyName(), column);
                         }
                         else
@@ -552,6 +558,9 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
             }
 
             HColumn<DynamicComposite, byte[]> column = HFactory.createColumn(colName, propValBytes, clock, SER_COMPOSITE, SER_BYTES);
+            if(colMeta.isTtlSet())
+                column.setTtl(colMeta.ttl());
+            
             mutator.addInsertion(keyBytes, _entityMeta.getFamilyName(), column);
         }
         

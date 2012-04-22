@@ -4,6 +4,7 @@ import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+import java.util.concurrent.TimeUnit;
 
 import me.prettyprint.hector.api.Serializer;
 
@@ -60,4 +61,19 @@ public @interface Column
      * @see SingleIndexRowPartitioner
      */
     public Class<? extends IIndexRowPartitioner> rangeIndexPartitioner() default SingleIndexRowPartitioner.class;
+    
+    /**
+     * The time to live for this column. For collections, the time to live applies to each entry in the collection, not the entire collection
+     * itself. TTL values for collections and embedded properties override any TTL values specified in the embedded objects. The granularity 
+     * and minimum interval for TTLs is 1 second.
+     * 
+     * @return the time to live duration
+     */
+    public int ttl() default -1;
+    
+    /**
+     * the time unit for the ttl interval, defaults to seconds.
+     * @return the time unit
+     */
+    public TimeUnit ttlUnit() default TimeUnit.SECONDS;
 }

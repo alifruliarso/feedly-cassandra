@@ -22,6 +22,9 @@ public class SampleBean implements Cloneable, Comparable<SampleBean>
     
     @Column
     private int intVal;
+
+    @Column(ttl=2)
+    private int ttlVal;
     
     @Column(name="l")
     private long longVal;
@@ -211,5 +214,15 @@ public class SampleBean implements Cloneable, Comparable<SampleBean>
     public void setSampleEnum(ESampleEnum sampleEnum)
     {
         this.sampleEnum = sampleEnum;
+    }
+
+    public int getTtlVal()
+    {
+        return ttlVal;
+    }
+
+    public void setTtlVal(int ttlVal)
+    {
+        this.ttlVal = ttlVal;
     }
 }

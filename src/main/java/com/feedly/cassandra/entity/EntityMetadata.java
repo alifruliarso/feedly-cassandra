@@ -48,7 +48,8 @@ public class EntityMetadata<V> extends EntityMetadataBase<V>
     public EntityMetadata(Class<V> clazz)
     {
         super(clazz, 
-              clazz.getAnnotation(ColumnFamily.class).forceCompositeColumns() || !onlySimpleTypes(clazz));
+              clazz.getAnnotation(ColumnFamily.class).forceCompositeColumns() || !onlySimpleTypes(clazz),
+              -1);
 
         ColumnFamily familyAnno = clazz.getAnnotation(ColumnFamily.class);
 
@@ -84,7 +85,7 @@ public class EntityMetadata<V> extends EntityMetadataBase<V>
                     throw new IllegalArgumentException("@RowKey may only be used on a simple type, not custom types or collections.");
                 
                 RowKey anno = f.getAnnotation(RowKey.class);
-                keyMeta = PropertyMetadataFactory.buildSimplePropertyMetadata(f, null, getter, setter, (Class<? extends Serializer<?>>) anno.value(), false);
+                keyMeta = PropertyMetadataFactory.buildSimplePropertyMetadata(f, null, -1, getter, setter, (Class<? extends Serializer<?>>) anno.value(), false);
             }
 
             if(f.isAnnotationPresent(Column.class))

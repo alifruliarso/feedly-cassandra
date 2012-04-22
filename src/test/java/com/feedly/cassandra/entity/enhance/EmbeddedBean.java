@@ -18,7 +18,7 @@ public class EmbeddedBean
     @Column(name="m")
     private Map<String, Integer> mapProp;
 
-    @Column(name="s")
+    @Column(name="s", ttl=2)
     private String strProp;
 
     @Column(name="d")

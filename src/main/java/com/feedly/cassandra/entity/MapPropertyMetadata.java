@@ -17,6 +17,7 @@ public class MapPropertyMetadata extends PropertyMetadataBase
                                Annotation[] annotations,
                                boolean isSorted,
                                String physicalName,
+                               int ttl,
                                Method getter,
                                Method setter)
     {
@@ -24,6 +25,7 @@ public class MapPropertyMetadata extends PropertyMetadataBase
               isSorted ? SortedMap.class : Map.class, 
               annotations,
               physicalName,
+              ttl,
               getter,
               setter, true, 
               isSorted ? EPropertyType.SORTED_MAP : EPropertyType.MAP);
@@ -34,12 +36,12 @@ public class MapPropertyMetadata extends PropertyMetadataBase
             if(((ParameterizedType) type).getActualTypeArguments().length != 2)
                 throw new IllegalStateException("Map types must have 2 generic argument");
             
-            PropertyMetadataBase keyMeta = PropertyMetadataFactory.buildPropertyMetadata("", ptype.getActualTypeArguments()[0], null, physicalName, null, null, null, false);
+            PropertyMetadataBase keyMeta = PropertyMetadataFactory.buildPropertyMetadata("", ptype.getActualTypeArguments()[0], null, physicalName, ttl, null, null, null, false);
             if(keyMeta.getPropertyType() != EPropertyType.SIMPLE)
                 throw new IllegalStateException("maps key must be simple type: property " + physicalName + ", type " + keyMeta.getFieldType().getName());
             
             _keyPropertyMetadata = (SimplePropertyMetadata) keyMeta;
-            _valuePropertyMetadata = PropertyMetadataFactory.buildPropertyMetadata("", ptype.getActualTypeArguments()[1], null, physicalName, null, null, null, false);
+            _valuePropertyMetadata = PropertyMetadataFactory.buildPropertyMetadata("", ptype.getActualTypeArguments()[1], null, physicalName, ttl, null, null, null, false);
         }
         else
         {

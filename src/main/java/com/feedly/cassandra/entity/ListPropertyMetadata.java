@@ -14,10 +14,11 @@ public class ListPropertyMetadata extends PropertyMetadataBase
                                 Type type,
                                 Annotation[] annotations,
                                 String physicalName,
+                                int ttl,
                                 Method getter,
                                 Method setter)
     {
-        super(name, List.class, annotations, physicalName, getter, setter, true, EPropertyType.LIST);
+        super(name, List.class, annotations, physicalName, ttl, getter, setter, true, EPropertyType.LIST);
         
         if(type instanceof ParameterizedType)
         {
@@ -25,7 +26,7 @@ public class ListPropertyMetadata extends PropertyMetadataBase
             if(((ParameterizedType) type).getActualTypeArguments().length != 1)
                 throw new IllegalStateException("List types must have 1 generic argument");
             
-            _elementPropertyMetadata = PropertyMetadataFactory.buildPropertyMetadata("", ptype.getActualTypeArguments()[0], null, physicalName, null, null, null, false);
+            _elementPropertyMetadata = PropertyMetadataFactory.buildPropertyMetadata("", ptype.getActualTypeArguments()[0], null, physicalName, ttl, null, null, null, false);
         }
         else
         {

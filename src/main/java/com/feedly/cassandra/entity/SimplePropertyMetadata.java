@@ -20,12 +20,13 @@ public class SimplePropertyMetadata extends PropertyMetadataBase
                                   Class<?> fieldClass,
                                   Annotation[] annotations,
                                   String physicalName,
+                                  int ttl,
                                   Method getter,
                                   Method setter,
                                   Class<? extends Serializer<?>> serializerClass,
                                           boolean useCompositeKeySerializer)
     {
-        super(name, fieldClass, annotations, physicalName, getter, setter, useCompositeKeySerializer, EPropertyType.SIMPLE);
+        super(name, fieldClass, annotations, physicalName, ttl, getter, setter, useCompositeKeySerializer, EPropertyType.SIMPLE);
 
         if(serializerClass != null)
             _serializer = getSerializerInstance(serializerClass);

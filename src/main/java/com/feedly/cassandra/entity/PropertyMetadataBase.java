@@ -25,11 +25,13 @@ import me.prettyprint.hector.api.beans.DynamicComposite;
     private final Method _setter;
     private final Set<Annotation> _annotations;
     private final Class<?> _fieldClass;
-
+    private final int _ttl;
+    
     public PropertyMetadataBase(String name,
                                 Class<?> clazz,
                                 Annotation[] annotations,
                                 String physicalName,
+                                int ttl,
                                 Method getter,
                                 Method setter,
                                 boolean useCompositeKeySerializer,
@@ -38,6 +40,9 @@ import me.prettyprint.hector.api.beans.DynamicComposite;
         _name = name;
         _physicalName = physicalName;
         _propertyType = propertyType;
+        _ttl = ttl;
+        if(_ttl == 0)
+            throw new IllegalArgumentException("TTL must be positive (>= 1 second) or unset");
         
         byte[] physNameBytes = null;
         
@@ -114,7 +119,16 @@ import me.prettyprint.hector.api.beans.DynamicComposite;
         return _annotations;
     }
 
-
+    public boolean isTtlSet() 
+    {
+        return _ttl > 0;
+    }
+    
+    public int ttl() //in seconds
+    {
+        return _ttl;
+    }
+    
     @Override
     public int compareTo(PropertyMetadataBase o)
     {

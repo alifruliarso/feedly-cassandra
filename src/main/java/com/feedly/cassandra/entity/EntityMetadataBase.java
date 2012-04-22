@@ -13,6 +13,7 @@ import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.TimeUnit;
 
 import me.prettyprint.hector.api.Serializer;
 
@@ -42,7 +43,7 @@ public class EntityMetadataBase<V>
     private final MapPropertyMetadata _unmappedHandler;
 
     @SuppressWarnings("unchecked")
-    public EntityMetadataBase(Class<V> clazz, boolean useCompositeColumns)
+    public EntityMetadataBase(Class<V> clazz, boolean useCompositeColumns, int ttl)
     {
         _clazz = clazz;
         _useCompositeColumns = useCompositeColumns;
@@ -69,7 +70,7 @@ public class EntityMetadataBase<V>
                     throw new IllegalArgumentException("@UnmappedColumnHandler field must have valid getter and setter.");
 
                 UnmappedColumnHandler anno = f.getAnnotation(UnmappedColumnHandler.class);
-                unmappedHandler = (MapPropertyMetadata) PropertyMetadataFactory.buildPropertyMetadata(f, null, getter, setter, (Class<? extends Serializer<?>>) anno.value(), useCompositeColumns());
+                unmappedHandler = (MapPropertyMetadata) PropertyMetadataFactory.buildPropertyMetadata(f, null, -1, getter, setter, (Class<? extends Serializer<?>>) anno.value(), useCompositeColumns());
             }
 
             if(f.isAnnotationPresent(Column.class))
@@ -85,7 +86,11 @@ public class EntityMetadataBase<V>
                 if(anno.hashIndexed() && anno.rangeIndexed())
                     throw new IllegalStateException(f.getName() + ": property can be range or hash indexed, not both");
                 
-                PropertyMetadataBase pm = PropertyMetadataFactory.buildPropertyMetadata(f, col, getter, setter, (Class<? extends Serializer<?>>) anno.serializer(), useCompositeColumns);
+                int colTtl = ttl > 0 ? ttl : anno.ttl() > 0 ? (int) TimeUnit.SECONDS.convert(anno.ttl(), anno.ttlUnit()) : -1;
+                PropertyMetadataBase pm = 
+                        PropertyMetadataFactory.buildPropertyMetadata(f, col, colTtl, getter, setter, 
+                                                                      (Class<? extends Serializer<?>>) anno.serializer(), useCompositeColumns);
+                
                 props.put(f.getName(), pm);
                 if(propsByPhysical.put(col, pm) != null)
                     throw new IllegalStateException(f.getName() + ": physical column name must be unique - " + col);
