@@ -196,7 +196,7 @@
               <net.sourceforge.cobertura.datafile>target/cobertura/cobertura.ser</net.sourceforge.cobertura.datafile>
             </systemPropertyVariables>
                 <!-- for JDK6 Support -->
-            <argLine>-Dsun.lang.ClassLoader.allowArraySyntax=true</argLine>
+            <argLine>-Xmx1g -Dsun.lang.ClassLoader.allowArraySyntax=true</argLine>
           </configuration>
         </plugin>
         <plugin>
