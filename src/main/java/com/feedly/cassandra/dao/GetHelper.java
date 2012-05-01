@@ -205,7 +205,7 @@ class GetHelper<K, V> extends LoadHelper<K, V>
         
         int cnt = rows.getCount();
         
-        if(cnt == 0)
+        if(cnt == 0 || (start != null && cnt == 1))
             return null;
         else if(keys != null)
             addCollectionRanges(keys, values, ranges);
@@ -256,7 +256,7 @@ class GetHelper<K, V> extends LoadHelper<K, V>
             
             if(_currentIter.hasNext())
                 _next = _currentIter.next();
-            else if(_current.size() < CassandraDaoBase.ROW_RANGE_SIZE - 1) //minus one for key boundary overlap
+            else if(_current.size() == 0) //minus one for key boundary overlap
             {
                 _current = null;
                 _currentIter = null;
@@ -264,7 +264,10 @@ class GetHelper<K, V> extends LoadHelper<K, V>
             }
             else //fetch next batch
             {
-                _lastKeyOfBatch = fetch(_query, _lastKeyOfBatch, _options, _current);
+                do 
+                {
+                    _lastKeyOfBatch = fetch(_query, _lastKeyOfBatch, _options, _current);
+                } while(_lastKeyOfBatch != null && _current.isEmpty());
                 
                 if(_current.isEmpty())
                 {
