@@ -4,6 +4,7 @@ import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+import java.util.concurrent.TimeUnit;
 
 /**
  * This annotation marks classes mapped to Cassandra column families. It should be used in conjunction with other field annotations within
@@ -53,5 +54,19 @@ public @interface ColumnFamily
      * @return the chunk length
      */
     int compressionChunkLength() default 64;
+ 
+    /**
+     * The time to live for this column family. Note this is applied on a per column basis. Updating one column will *not* affect the 
+     * lifetime of another column in the same family. This can be overridden at the column level by specifying a ttl at the property level
+     * using the {@link Column} annotation.
+     * 
+     * @return the time to live duration
+     */
+    public int ttl() default -1;
     
+    /**
+     * the time unit for the ttl interval, defaults to seconds.
+     * @return the time unit
+     */
+    public TimeUnit ttlUnit() default TimeUnit.SECONDS;
 }

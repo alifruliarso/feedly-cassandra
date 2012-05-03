@@ -53,6 +53,7 @@ import com.feedly.cassandra.entity.enhance.ParentBean;
 import com.feedly.cassandra.entity.enhance.PartitionedIndexBean;
 import com.feedly.cassandra.entity.enhance.SampleBean;
 import com.feedly.cassandra.entity.enhance.SortedMapBean;
+import com.feedly.cassandra.entity.enhance.TtlBean;
 import com.feedly.cassandra.test.CassandraServiceTestBase;
 
 @SuppressWarnings({"unchecked", "rawtypes"})
@@ -247,7 +248,36 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
     }
 
     @Test
-    public void testTtl() throws InterruptedException
+    public void testColumnFamilyTtl() throws InterruptedException
+    {
+        CassandraDaoBase<Long, TtlBean> dao = new CassandraDaoBase<Long, TtlBean>(Long.class, TtlBean.class);
+        dao.setKeyspaceFactory(_pm);
+        dao.init();
+
+        TtlBean bean = new TtlBean();
+        bean.setRowKey(10L);
+        bean.setStrVal1("v1");
+        bean.setStrVal2("v2");
+        bean.setStrVal3("v3");
+        dao.put(bean);
+
+        assertEquals(bean, dao.get(bean.getRowKey()));
+
+        Thread.sleep(1500);
+
+        bean.setStrVal1(null);
+        assertEquals(bean, dao.get(bean.getRowKey()));
+
+        Thread.sleep(2000);
+        bean.setStrVal3(null);
+        assertEquals(bean, dao.get(bean.getRowKey()));
+
+        Thread.sleep(2000);
+        assertNull(dao.get(bean.getRowKey()));
+    }
+
+    @Test
+    public void testColumnTtl() throws InterruptedException
     {
         /*
          * simple

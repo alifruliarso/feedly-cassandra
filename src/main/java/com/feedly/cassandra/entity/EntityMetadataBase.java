@@ -43,7 +43,7 @@ public class EntityMetadataBase<V>
     private final MapPropertyMetadata _unmappedHandler;
 
     @SuppressWarnings("unchecked")
-    public EntityMetadataBase(Class<V> clazz, boolean useCompositeColumns, int ttl)
+    public EntityMetadataBase(Class<V> clazz, boolean useCompositeColumns, int ttl, boolean overrideTtl)
     {
         _clazz = clazz;
         _useCompositeColumns = useCompositeColumns;
@@ -86,7 +86,13 @@ public class EntityMetadataBase<V>
                 if(anno.hashIndexed() && anno.rangeIndexed())
                     throw new IllegalStateException(f.getName() + ": property can be range or hash indexed, not both");
                 
-                int colTtl = ttl > 0 ? ttl : anno.ttl() > 0 ? (int) TimeUnit.SECONDS.convert(anno.ttl(), anno.ttlUnit()) : -1;
+                int colTtl = anno.ttl() > 0 ? (int) TimeUnit.SECONDS.convert(anno.ttl(), anno.ttlUnit()) : -1;
+
+                if(overrideTtl && ttl > 0) //if override and entity level ttl is set
+                    colTtl = ttl;
+                else if(!overrideTtl && colTtl < 0) //if not overriding and prop level ttl is not set
+                    colTtl = ttl;
+                
                 PropertyMetadataBase pm = 
                         PropertyMetadataFactory.buildPropertyMetadata(f, col, colTtl, getter, setter, 
                                                                       (Class<? extends Serializer<?>>) anno.serializer(), useCompositeColumns);

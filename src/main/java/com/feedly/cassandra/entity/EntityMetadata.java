@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import me.prettyprint.hector.api.Serializer;
 
@@ -43,18 +44,17 @@ public class EntityMetadata<V> extends EntityMetadataBase<V>
     private final String _idxFamilyName;
     private final List<IndexMetadata> _indexes;
     private final Map<SimplePropertyMetadata, List<IndexMetadata>> _indexesByProp;
-    
+
     @SuppressWarnings("unchecked")
     public EntityMetadata(Class<V> clazz)
     {
         super(clazz, 
-              clazz.getAnnotation(ColumnFamily.class).forceCompositeColumns() || !onlySimpleTypes(clazz),
-              -1);
+              areCompositeColsForced(clazz),
+              ttlValue(clazz),
+              false);
 
         ColumnFamily familyAnno = clazz.getAnnotation(ColumnFamily.class);
 
-        if(familyAnno == null)
-            throw new IllegalArgumentException(clazz.getName() + ": missing @ColumnFamily");
         _familyName = familyAnno.name();
         _walFamilyName = familyAnno.name() + "_idxwal";
         _idxFamilyName = familyAnno.name() + "_idx";
@@ -208,6 +208,33 @@ public class EntityMetadata<V> extends EntityMetadataBase<V>
             entry.setValue(Collections.unmodifiableList(entry.getValue()));
         
         _indexesByProp = indexesByProp;
+    }
+
+    private static int ttlValue(Class<?> clazz)
+    {
+        ColumnFamily familyAnno = clazz.getAnnotation(ColumnFamily.class);
+        if(familyAnno == null)
+            throw new NullPointerException("@ColumnFamily annotation not set.");
+        
+        if(familyAnno.ttl() < 0)
+            return -1;
+        
+        int ttl = (int) TimeUnit.SECONDS.convert(familyAnno.ttl(), familyAnno.ttlUnit());
+        
+        if(ttl == 0)
+            throw new IllegalArgumentException("TTL must be positive (>= 1 second) or unset");
+
+        return ttl;
+    }
+
+    private static boolean areCompositeColsForced(Class<?> clazz)
+    {
+        ColumnFamily familyAnno = clazz.getAnnotation(ColumnFamily.class);
+        if(familyAnno == null)
+            throw new NullPointerException("@ColumnFamily annotation not set.");
+        
+        
+        return familyAnno.forceCompositeColumns() || !onlySimpleTypes(clazz);
     }
 
     private static boolean onlySimpleTypes(Class<?> clazz)
