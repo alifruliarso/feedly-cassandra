@@ -263,16 +263,16 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
 
         assertEquals(bean, dao.get(bean.getRowKey()));
 
-        Thread.sleep(1500);
+        Thread.sleep(4500);
 
         bean.setStrVal1(null);
         assertEquals(bean, dao.get(bean.getRowKey()));
 
-        Thread.sleep(2000);
+        Thread.sleep(4000);
         bean.setStrVal3(null);
         assertEquals(bean, dao.get(bean.getRowKey()));
 
-        Thread.sleep(2000);
+        Thread.sleep(3000);
         assertNull(dao.get(bean.getRowKey()));
     }
 

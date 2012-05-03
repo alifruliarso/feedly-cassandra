@@ -7,16 +7,16 @@ import com.feedly.cassandra.anno.ColumnFamily;
 import com.feedly.cassandra.anno.RowKey;
 import com.feedly.cassandra.entity.EntityUtils;
 
-@ColumnFamily(name="ttlbean", ttl=3)
+@ColumnFamily(name="ttlbean", ttl=6)
 public class TtlBean
 {
     @RowKey
     private Long rowKey;
     
-    @Column(name="s1", ttl=1) 
+    @Column(name="s1", ttl=3) 
     private String strVal1;
 
-    @Column(name="s2", ttl=5)
+    @Column(name="s2", ttl=9)
     private String strVal2;
 
     @Column(name="s3")
