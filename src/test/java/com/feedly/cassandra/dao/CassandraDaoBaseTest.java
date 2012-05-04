@@ -34,6 +34,7 @@ import me.prettyprint.hector.api.query.SliceQuery;
 import org.junit.Before;
 import org.junit.Test;
 
+import com.feedly.cassandra.EConsistencyLevel;
 import com.feedly.cassandra.PersistenceManager;
 import com.feedly.cassandra.entity.ByteIndicatorSerializer;
 import com.feedly.cassandra.entity.EntityMetadata;
@@ -250,7 +251,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
     @Test
     public void testColumnFamilyTtl() throws InterruptedException
     {
-        CassandraDaoBase<Long, TtlBean> dao = new CassandraDaoBase<Long, TtlBean>(Long.class, TtlBean.class);
+        CassandraDaoBase<Long, TtlBean> dao = new CassandraDaoBase<Long, TtlBean>(Long.class, TtlBean.class, EConsistencyLevel.ONE);
         dao.setKeyspaceFactory(_pm);
         dao.init();
 
@@ -2878,7 +2879,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         List<StaleIndexUpdateRecord> records = new ArrayList<StaleIndexUpdateRecord>();
         
         @Override
-        public void handle(EntityMetadata<?> entity, IndexMetadata index, Collection<StaleIndexValue> values)
+        public void handle(EntityMetadata<?> entity, IndexMetadata index, EConsistencyLevel level, Collection<StaleIndexValue> values)
         {
             StaleIndexUpdateRecord record = new StaleIndexUpdateRecord();
             record.entityMetadata = entity;

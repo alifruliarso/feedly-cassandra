@@ -6,7 +6,7 @@ import java.util.Set;
  * Options when doing a get.
  * @author kireet
  */
-public class GetOptions implements Cloneable
+public class GetOptions extends OptionsBase
 {
     private Object _startColumn, _endColumn; //end is inclusive
     private Set<? extends Object> _includes;
@@ -151,9 +151,4 @@ public class GetOptions implements Cloneable
         return _columnFilterStrategy;
     }
     
-    @Override
-    public Object clone() throws CloneNotSupportedException
-    {
-        return super.clone();
-    }
 }

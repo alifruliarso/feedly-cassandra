@@ -15,6 +15,7 @@ import me.prettyprint.hector.api.beans.OrderedRows;
 import me.prettyprint.hector.api.beans.Row;
 import me.prettyprint.hector.api.factory.HFactory;
 
+import com.feedly.cassandra.EConsistencyLevel;
 import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.IndexMetadata;
@@ -52,19 +53,19 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
         switch(options.getColumnFilterStrategy())
         {
             case UNFILTERED:
-                return bulkFindByIndexPartial(template, null, null, null, null, options.getMaxRows(), index);
+                return bulkFindByIndexPartial(template, null, null, null, null, options.getMaxRows(), index, options.getConsistencyLevel());
             case RANGE:
                 byte[] startCol = propertyName(options.getStartColumn(), ComponentEquality.EQUAL);
                 byte[] endCol = propertyName(options.getEndColumn(), ComponentEquality.GREATER_THAN_EQUAL);
-                return bulkFindByIndexPartial(template, startCol, endCol, null, null, options.getMaxRows(), index);
+                return bulkFindByIndexPartial(template, startCol, endCol, null, null, options.getMaxRows(), index, options.getConsistencyLevel());
             case INCLUDES:
-                return mfind(template, options.getIncludes(), options.getExcludes(), options.getMaxRows(), index);
+                return mfind(template, options.getIncludes(), options.getExcludes(), options.getMaxRows(), index, options.getConsistencyLevel());
         }
         
         throw new IllegalStateException(); //never happens
     }
 
-    private Collection<V> mfind(V template, Set<? extends Object> includes, Set<String> excludes, int maxRows, IndexMetadata index)
+    private Collection<V> mfind(V template, Set<? extends Object> includes, Set<String> excludes, int maxRows, IndexMetadata index, EConsistencyLevel level)
     {
         if(includes != null && excludes != null)
             throw new IllegalArgumentException("either includes or excludes should be specified, not both");
@@ -75,7 +76,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
         List<byte[]> colNames = new ArrayList<byte[]>();
         List<CollectionRange> ranges = derivePartialColumns(colNames, includes, excludes);
 
-        return bulkFindByIndexPartial(template, null, null, colNames, ranges, maxRows, index);
+        return bulkFindByIndexPartial(template, null, null, colNames, ranges, maxRows, index, level);
         
     }
 
@@ -85,7 +86,8 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
                                                  List<byte[]> colNames,
                                                  List<CollectionRange> ranges,
                                                  int maxRows, 
-                                                 IndexMetadata index)
+                                                 IndexMetadata index,
+                                                 EConsistencyLevel level)
     {
         SimplePropertyMetadata pm = index.getIndexedProperties().get(0); //must be exactly 1
                 
@@ -93,7 +95,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
         if(propVal == null)
             throw new IllegalArgumentException("null values not supported for hash indexes");
         
-        IndexedSlicesQuery<byte[], byte[], byte[]> query = HFactory.createIndexedSlicesQuery(_keyspaceFactory.createKeyspace(), SER_BYTES, SER_BYTES, SER_BYTES);
+        IndexedSlicesQuery<byte[], byte[], byte[]> query = HFactory.createIndexedSlicesQuery(_keyspaceFactory.createKeyspace(level), SER_BYTES, SER_BYTES, SER_BYTES);
         query.setColumnFamily(_entityMeta.getFamilyName());
         query.setRowCount(CassandraDaoBase.ROW_RANGE_SIZE);
         query.addEqualsExpression(pm.getPhysicalNameBytes(), serialize(propVal, false, pm.getSerializer()));
@@ -108,7 +110,8 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
                                         ranges, 
                                         new EqualityValueFilter<V>(_entityMeta, template, index), 
                                         maxRows,
-                                        index);
+                                        index,
+                                        level);
     }
     
     @SuppressWarnings("unchecked")
@@ -118,7 +121,8 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
                                K lastKey, 
                                int maxRows, 
                                List<V> values, 
-                               List<CollectionRange> ranges)
+                               List<CollectionRange> ranges,
+                               EConsistencyLevel level)
     {
         SimplePropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
         int fetchRowCount = Math.min(maxRows, CassandraDaoBase.ROW_RANGE_SIZE);
@@ -150,7 +154,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
             }
             
 
-            V value = fromColumnSlice(key, null, keyMeta, row.getKey(), null, row.getColumnSlice(), endColBytes);
+            V value = fromColumnSlice(key, null, keyMeta, row.getKey(), null, row.getColumnSlice(), endColBytes, level);
             
             keys.add(key);
             values.add(value);
@@ -166,7 +170,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
         if(ranges != null && !values.isEmpty())
         {
             _logger.debug("adding full collections to {} values: ({})", values.size(), ranges);
-            addCollectionRanges(keys, values, ranges);
+            addCollectionRanges(keys, values, ranges, level);
         }
         
         int cnt = rows.getCount();
@@ -201,6 +205,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
         private V _next;
         private List<CollectionRange> _ranges;
         private int _iteratedCount = 0;
+        private final EConsistencyLevel _level;
         
         public LazyLoadedIterator(LazyLoadedCollection parent,
                                   List<V> first,
@@ -210,7 +215,8 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
                                   List<CollectionRange> ranges, 
                                   IValueFilter<V> filter,
                                   int maxRows,
-                                  IndexMetadata index)
+                                  IndexMetadata index,
+                                  EConsistencyLevel level)
         {
             _parent = parent;
             _filter = filter;
@@ -221,6 +227,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
             _query = query;
             _nextStartKey = nextStartKey;
             _ranges = ranges;
+            _level = level;
             
             if(first.size() < CassandraDaoBase.ROW_RANGE_SIZE)
                 _remRows = 0;
@@ -268,7 +275,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
                         V last = _current.get(_current.size() - 1);
                         K lastKey = (K) invokeGetter(keyMeta, last);
                         _current.clear();
-                        _nextStartKey = fetchBatch(_query, _nextStartKey, _endCol, lastKey, _remRows, _current, _ranges);
+                        _nextStartKey = fetchBatch(_query, _nextStartKey, _endCol, lastKey, _remRows, _current, _ranges, _level);
                         
                         int cnt = _current.size();
                         if(cnt == 0) //get yielded no rows
@@ -329,6 +336,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
         private List<V> _all = null; //if it is known all rows have been fetched, this field is set
         private List<V> _first = new ArrayList<V>();
         private final List<CollectionRange> _ranges;
+        private final EConsistencyLevel _level;
         
         @SuppressWarnings("unchecked")
         public LazyLoadedCollection(IndexedSlicesQuery<byte[], byte[], byte[]> query, 
@@ -336,7 +344,8 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
                                     List<CollectionRange> ranges,
                                     IValueFilter<V> filter,
                                     int maxRows,
-                                    IndexMetadata index)
+                                    IndexMetadata index,
+                                    EConsistencyLevel level)
         {
             _query = query;
             _endColBytes = endColBytes;
@@ -344,10 +353,12 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
             _filter = filter;
             _index = index;
             _ranges = ranges;
+            _level = level;
+            
             K lastKey = null;
             while(true) //loop until unfiltered rows are found
             {
-                _nextRowKeyBytes = fetchBatch(query, _nextRowKeyBytes, endColBytes, lastKey, maxRows, _first, _ranges);
+                _nextRowKeyBytes = fetchBatch(query, _nextRowKeyBytes, endColBytes, lastKey, maxRows, _first, _ranges, _level);
                 if(_first.isEmpty())
                     break;
                 
@@ -407,7 +418,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
             if(_all != null)
                 return _all.iterator();
             
-            return new LazyLoadedIterator(this, _first, _query, _nextRowKeyBytes, _endColBytes, _ranges, _filter, _maxRows, _index);
+            return new LazyLoadedIterator(this, _first, _query, _nextRowKeyBytes, _endColBytes, _ranges, _filter, _maxRows, _index, _level);
         }
     }
 }

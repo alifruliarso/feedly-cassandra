@@ -9,12 +9,17 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 
+import me.prettyprint.cassandra.model.AllOneConsistencyLevelPolicy;
 import me.prettyprint.cassandra.model.BasicColumnDefinition;
 import me.prettyprint.cassandra.model.BasicColumnFamilyDefinition;
+import me.prettyprint.cassandra.model.QuorumAllConsistencyLevelPolicy;
 import me.prettyprint.cassandra.serializers.StringSerializer;
 import me.prettyprint.cassandra.service.CassandraHostConfigurator;
+import me.prettyprint.cassandra.service.OperationType;
 import me.prettyprint.cassandra.service.ThriftKsDef;
 import me.prettyprint.hector.api.Cluster;
+import me.prettyprint.hector.api.ConsistencyLevelPolicy;
+import me.prettyprint.hector.api.HConsistencyLevel;
 import me.prettyprint.hector.api.Keyspace;
 import me.prettyprint.hector.api.beans.DynamicComposite;
 import me.prettyprint.hector.api.ddl.ColumnDefinition;
@@ -44,6 +49,7 @@ import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 public class PersistenceManager implements IKeyspaceFactory
 {
     private static final Logger _logger = LoggerFactory.getLogger(PersistenceManager.class.getName());
+    private static final Map<EConsistencyLevel, ConsistencyLevelPolicy> _consistencyMapping;
     
     private boolean _syncSchema = true;
     private String[] _sourcePackages = new String[0];
@@ -53,6 +59,31 @@ public class PersistenceManager implements IKeyspaceFactory
     private String _clusterName;
     private Cluster _cluster;
     private int _replicationFactor = 1;
+    
+    static
+    {
+        Map<EConsistencyLevel, ConsistencyLevelPolicy> consistencyMapping = new HashMap<EConsistencyLevel, ConsistencyLevelPolicy>();
+        consistencyMapping.put(EConsistencyLevel.ONE, new AllOneConsistencyLevelPolicy());
+        consistencyMapping.put(EConsistencyLevel.QUOROM, new QuorumAllConsistencyLevelPolicy());
+        consistencyMapping.put(EConsistencyLevel.ALL, 
+                               new ConsistencyLevelPolicy()
+                               {
+                                    @Override
+                                    public HConsistencyLevel get(OperationType op)
+                                    {
+                                        return HConsistencyLevel.ALL;
+                                    }
+                        
+                                    @Override
+                                    public HConsistencyLevel get(OperationType op, String cfName)
+                                    {
+                                        return HConsistencyLevel.ALL;
+                                    }
+                
+                               });
+        
+        _consistencyMapping = Collections.unmodifiableMap(consistencyMapping);
+    }
     
     public void setReplicationFactor(int r)
     {
@@ -162,9 +193,9 @@ public class PersistenceManager implements IKeyspaceFactory
         }
     }
     
-    public Keyspace createKeyspace()
+    public Keyspace createKeyspace(EConsistencyLevel level)
     {
-        return HFactory.createKeyspace(_keyspace, _cluster);
+        return HFactory.createKeyspace(_keyspace, _cluster, _consistencyMapping.get(level));
     }
     
     @SuppressWarnings({ "rawtypes", "unchecked" })

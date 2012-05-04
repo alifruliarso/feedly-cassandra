@@ -18,6 +18,7 @@ import me.prettyprint.hector.api.query.QueryResult;
 import me.prettyprint.hector.api.query.RangeSlicesQuery;
 import me.prettyprint.hector.api.query.SliceQuery;
 
+import com.feedly.cassandra.EConsistencyLevel;
 import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.SimplePropertyMetadata;
@@ -37,19 +38,20 @@ class GetHelper<K, V> extends LoadHelper<K, V>
         switch(options.getColumnFilterStrategy())
         {
             case UNFILTERED:
-                return loadFromGet(key, null, null, null, null);
+                return loadFromGet(key, null, null, null, null, options.getConsistencyLevel());
             case INCLUDES:
-                return get(key, value, options.getIncludes(), options.getExcludes());
+                return get(key, value, options.getIncludes(), options.getExcludes(), options.getConsistencyLevel());
             case RANGE:
                 return loadFromGet(key, value, null, 
                                    propertyName(options.getStartColumn(), ComponentEquality.EQUAL), 
-                                   propertyName(options.getEndColumn(), ComponentEquality.GREATER_THAN_EQUAL));
+                                   propertyName(options.getEndColumn(), ComponentEquality.GREATER_THAN_EQUAL), 
+                                   options.getConsistencyLevel());
         }
         
         throw new IllegalStateException(); //never happens
     }
 
-    private V get(K key, V value, Set<? extends Object> includes, Set<String> excludes)
+    private V get(K key, V value, Set<? extends Object> includes, Set<String> excludes, EConsistencyLevel level)
     {
         _logger.debug("loading {}[{}]", _entityMeta.getFamilyName(), key);
 
@@ -59,12 +61,12 @@ class GetHelper<K, V> extends LoadHelper<K, V>
         List<byte[]> colNames = new ArrayList<byte[]>();
         List<CollectionRange> ranges = derivePartialColumns(colNames, includes, excludes);
 
-        value = loadFromGet(key, value, colNames, null, null);
+        value = loadFromGet(key, value, colNames, null, null, level);
         
         if(ranges != null)
         {
             for(CollectionRange r : ranges)
-                value = loadFromGet(key, value, null, r.startBytes(), r.endBytes());
+                value = loadFromGet(key, value, null, r.startBytes(), r.endBytes(), level);
         }
 
         return value;
@@ -72,7 +74,7 @@ class GetHelper<K, V> extends LoadHelper<K, V>
 
     public List<V> mget(Collection<K> keys)
     {
-        return bulkLoadFromMultiGet(keys, null, null, null, null, false);
+        return bulkLoadFromMultiGet(keys, null, null, null, null, false, null);
     }
 
     public List<V> mget(List<K> keys, List<V> values, GetOptions options)
@@ -85,14 +87,15 @@ class GetHelper<K, V> extends LoadHelper<K, V>
         switch(options.getColumnFilterStrategy())
         {
             case UNFILTERED:
-                return bulkLoadFromMultiGet(keys, values, null, null, null, true);
+                return bulkLoadFromMultiGet(keys, values, null, null, null, true, options.getConsistencyLevel());
             case INCLUDES:
-                return mget(keys, values, options.getIncludes(), options.getExcludes());
+                return mget(keys, values, options.getIncludes(), options.getExcludes(), options.getConsistencyLevel());
             case RANGE:
                 return bulkLoadFromMultiGet(keys, values, null, 
                                             propertyName(options.getStartColumn(), ComponentEquality.EQUAL), 
                                             propertyName(options.getEndColumn(), ComponentEquality.GREATER_THAN_EQUAL), 
-                                            true);
+                                            true,
+                                            options.getConsistencyLevel());
         }
 
         throw new IllegalStateException(); //never happens
@@ -103,7 +106,7 @@ class GetHelper<K, V> extends LoadHelper<K, V>
         return new LazyLoadedCollection(options);
     }
     
-    private List<V> mget(List<K> keys, List<V> values, Set<? extends Object> includes, Set<String> excludes)
+    private List<V> mget(List<K> keys, List<V> values, Set<? extends Object> includes, Set<String> excludes, EConsistencyLevel level)
     {
         if(includes != null && excludes != null)
             throw new IllegalArgumentException("either includes or excludes should be specified, not both");
@@ -114,27 +117,27 @@ class GetHelper<K, V> extends LoadHelper<K, V>
         List<byte[]> colNames = new ArrayList<byte[]>();
         List<CollectionRange> fullCollectionProperties = derivePartialColumns(colNames, includes, excludes);
 
-        values = bulkLoadFromMultiGet(keys, values, colNames, null, null, true);
+        values = bulkLoadFromMultiGet(keys, values, colNames, null, null, true, level);
 
-        return addCollectionRanges(keys, values, fullCollectionProperties);
+        return addCollectionRanges(keys, values, fullCollectionProperties, level);
     }
 
     @SuppressWarnings({ "rawtypes", "unchecked" })
-    private V loadFromGet(K key, V value, List<byte[]> cols, byte[] from, byte[] to)
+    private V loadFromGet(K key, V value, List<byte[]> cols, byte[] from, byte[] to, EConsistencyLevel level)
     {
         _logger.debug("loading {}[{}]", _entityMeta.getFamilyName(), key);
 
         SimplePropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
         byte[] keyBytes = ((Serializer) keyMeta.getSerializer()).toBytes(key);
 
-        SliceQuery<byte[], byte[], byte[]> query = buildSliceQuery(keyBytes);
+        SliceQuery<byte[], byte[], byte[]> query = buildSliceQuery(keyBytes, level);
 
         if(cols != null)
             query.setColumnNames(cols.toArray(new byte[cols.size()][]));
         else
             query.setRange(from, to, false, CassandraDaoBase.COL_RANGE_SIZE);
 
-        return fromColumnSlice(key, value, keyMeta, keyBytes, query, query.execute().get(), to);
+        return fromColumnSlice(key, value, keyMeta, keyBytes, query, query.execute().get(), to, level);
     }
 
     
@@ -193,7 +196,7 @@ class GetHelper<K, V> extends LoadHelper<K, V>
             
             K key = (K) ((Serializer) keyMeta.getSerializer()).fromBytes(row.getKey());
 
-            V value = fromColumnSlice(key, null, keyMeta, row.getKey(), null, row.getColumnSlice(), endCol);
+            V value = fromColumnSlice(key, null, keyMeta, row.getKey(), null, row.getColumnSlice(), endCol, options.getConsistencyLevel());
 
             if(value != null)
             {
@@ -208,7 +211,7 @@ class GetHelper<K, V> extends LoadHelper<K, V>
         if(cnt == 0 || (start != null && cnt == 1))
             return null;
         else if(keys != null)
-            addCollectionRanges(keys, values, ranges);
+            addCollectionRanges(keys, values, ranges, options.getConsistencyLevel());
 
         return cnt == 0 ? null : rows.getList().get(cnt - 1).getKey();
     }
@@ -306,7 +309,7 @@ class GetHelper<K, V> extends LoadHelper<K, V>
         private int _size = -1;
         public LazyLoadedCollection(GetOptions options)
         {
-            _query = HFactory.createRangeSlicesQuery(_keyspaceFactory.createKeyspace(), SER_BYTES, SER_BYTES, SER_BYTES);
+            _query = HFactory.createRangeSlicesQuery(_keyspaceFactory.createKeyspace(options.getConsistencyLevel()), SER_BYTES, SER_BYTES, SER_BYTES);
             _query.setColumnFamily(_entityMeta.getFamilyName());
             
             _lastKeyOfBatch = fetch(_query, null, options, _first); 

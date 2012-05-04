@@ -10,6 +10,7 @@ import me.prettyprint.hector.api.mutation.Mutator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.feedly.cassandra.EConsistencyLevel;
 import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.IndexMetadata;
@@ -32,11 +33,11 @@ public class InlineRepairStrategy implements IStaleIndexValueStrategy
     }
 
     @Override
-    public void handle(EntityMetadata<?> entity, IndexMetadata index, Collection<StaleIndexValue> values)
+    public void handle(EntityMetadata<?> entity, IndexMetadata index, EConsistencyLevel level, Collection<StaleIndexValue> values)
     {
         try
         {
-            Mutator<DynamicComposite> mutator = HFactory.createMutator(_keyspaceFactory.createKeyspace(), SER_COMPOSITE);
+            Mutator<DynamicComposite> mutator = HFactory.createMutator(_keyspaceFactory.createKeyspace(level), SER_COMPOSITE);
             
             _logger.debug("deleting {} stale values from {}", values.size(), entity.getIndexFamilyName());
             for(StaleIndexValue value : values)

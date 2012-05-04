@@ -31,7 +31,7 @@ abstract class DaoHelperBase<K,V>
     protected static final DynamicCompositeSerializer SER_COMPOSITE = new DynamicCompositeSerializer();
 
     protected final EntityMetadata<V> _entityMeta;
-    protected IKeyspaceFactory _keyspaceFactory;
+    protected final IKeyspaceFactory _keyspaceFactory;
 
     DaoHelperBase(EntityMetadata<V> meta, IKeyspaceFactory factory)
     {

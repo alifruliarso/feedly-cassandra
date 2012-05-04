@@ -25,12 +25,27 @@ public interface ICassandraDao<K, V>
     public void put(V value);
 
     /**
+     * store the entity in cassandra. Only set properties are stored.
+     * @param value the entity to store.
+     * @param options the put options.
+     */
+    public void put(V value, PutOptions options);
+
+    /**
      * store multiple entities in cassandra. This is functionally equivalent to {@link #put(Object)}, the main difference will be improved
      * performance by batching the writes.
      * @param values the entities to store.
      */
     public void mput(Collection<V> values);
 
+    /**
+     * store multiple entities in cassandra. This is functionally equivalent to {@link #put(Object)}, the main difference will be improved
+     * performance by batching the writes.
+     * @param values the entities to store.
+     * @param options the put options.
+     */
+    public void mput(Collection<V> values, PutOptions options);
+    
     /**
      * fetch an entity by row key, using default options
      * @param key the row key.
@@ -152,10 +167,26 @@ public interface ICassandraDao<K, V>
     public void delete(K key);
     
     /**
+     * Delete an entity.
+     * @param key the key of the entity to delete.
+     * @param options the delete options.
+     */
+    public void delete(K key, DeleteOptions options);
+    
+    /**
      * Delete multiple entities. This is functionally equivalent to {@link #delete(Object)}, the
      *  main difference will be improved performance by batching the deletes.
      *  
      * @param keys the keys of the entities to delete.
      */
     public void mdelete(Collection<K> keys);
+
+    /**
+     * Delete multiple entities. This is functionally equivalent to {@link #delete(Object)}, the
+     *  main difference will be improved performance by batching the deletes.
+     *  
+     * @param keys the keys of the entities to delete.
+     * @param options the delete options.
+     */
+    public void mdelete(Collection<K> keys, DeleteOptions options);
 }

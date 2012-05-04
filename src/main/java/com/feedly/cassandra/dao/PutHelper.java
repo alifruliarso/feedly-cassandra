@@ -18,6 +18,7 @@ import me.prettyprint.hector.api.beans.HColumn;
 import me.prettyprint.hector.api.factory.HFactory;
 import me.prettyprint.hector.api.mutation.Mutator;
 
+import com.feedly.cassandra.EConsistencyLevel;
 import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.entity.ByteIndicatorSerializer;
 import com.feedly.cassandra.entity.EIndexType;
@@ -44,22 +45,22 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
         super(meta, factory);
     }
 
-    public void put(V value)
+    public void put(V value, PutOptions options)
     {
-        mput(Collections.singleton(value));
+        mput(Collections.singleton(value), options);
     }
 
-    public void mput(Collection<V> values)
+    public void mput(Collection<V> values, PutOptions options)
     {
         SimplePropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
-        Keyspace keyspace = _keyspaceFactory.createKeyspace();
+        Keyspace keyspace = _keyspaceFactory.createKeyspace(null);
         Mutator<byte[]> mutator = HFactory.createMutator(keyspace, SER_BYTES);
         Mutator<byte[]> walMutator = null;
         Mutator<byte[]> walCleanupMutator = null;
         boolean indexesUpdated = false;
         long clock = keyspace.createClock();
         byte[] nowBytes = SER_LONG.toBytes(clock);
-        
+                
         SaveStatus overallStatus = new SaveStatus();
         //prepare the operations...
         for(V value : values)
@@ -78,7 +79,17 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                 descriptor.append("[").append(key).append("]");
             }
             
-            SaveStatus status = saveDirtyFields(descriptor, _entityMeta.getUnmappedHandler(), _entityMeta.getProperties(), key, keyBytes, value, clock, mutator, null, false);
+            SaveStatus status = saveDirtyFields(descriptor, 
+                                                _entityMeta.getUnmappedHandler(), 
+                                                _entityMeta.getProperties(), 
+                                                key, 
+                                                keyBytes, 
+                                                value, 
+                                                clock, 
+                                                mutator, 
+                                                null, 
+                                                false,
+                                                options.getConsistencyLevel());
             overallStatus.merge(status);
             if(status.updateCnt == 0)
                 _logger.info("no updates for {}[{}]", _entityMeta.getType().getSimpleName(), key);
@@ -133,15 +144,16 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
     //rv[0] = total col cnt, rv[1] = range index update count
     @SuppressWarnings({ "rawtypes", "unchecked" })
     private SaveStatus saveDirtyFields(StringBuilder descriptor,
-                                  MapPropertyMetadata unmappedHandlerMeta,
-                                  List<PropertyMetadataBase> properties,
-                                  Object key,
-                                  byte[] keyBytes, 
-                                  Object entityValue, 
-                                  long clock,
-                                  Mutator<byte[]> mutator,
-                                  DynamicComposite colBase,
-                                  boolean isEmbedded)
+                                       MapPropertyMetadata unmappedHandlerMeta,
+                                       List<PropertyMetadataBase> properties,
+                                       Object key,
+                                       byte[] keyBytes, 
+                                       Object entityValue, 
+                                       long clock,
+                                       Mutator<byte[]> mutator,
+                                       DynamicComposite colBase,
+                                       boolean isEmbedded,
+                                       EConsistencyLevel level)
     {
         IEnhancedEntity entity = asEntity(entityValue);
         BitSet dirty = entity.getModifiedFields();
@@ -203,7 +215,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                         {
                             if(idxMeta.getType() == EIndexType.RANGE && affectedIndexes.add(idxMeta))
                             {
-                                addIndexWrite(key, entityValue, dirty, idxMeta, clock, mutator);
+                                addIndexWrite(key, entityValue, dirty, idxMeta, clock, mutator, level);
                                 rv.indexUpdateCnt++;
                             }
                         }
@@ -221,18 +233,18 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                     if(t == EPropertyType.OBJECT)
                     {
                         EmbeddedEntityMetadata<?> subMeta = ((ObjectPropertyMetadata) colMeta).getObjectMetadata();
-                        rv.merge(saveDirtyFields(descriptor, subMeta.getUnmappedHandler(), subMeta.getProperties(), key, keyBytes, propVal, clock, mutator, colBase, true));
+                        rv.merge(saveDirtyFields(descriptor, subMeta.getUnmappedHandler(), subMeta.getProperties(), key, keyBytes, propVal, clock, mutator, colBase, true, level));
                         rv.addEntity(propVal);
                     }
                     else if(t == EPropertyType.LIST)
                     {
                         List<?> list = (List<?>) propVal;
-                        rv.merge(saveListFields(descriptor, key, keyBytes, colBase, (ListPropertyMetadata) colMeta, list, clock, mutator));
+                        rv.merge(saveListFields(descriptor, key, keyBytes, colBase, (ListPropertyMetadata) colMeta, list, clock, mutator, level));
                     }
                     else
                     {
                         Map<?, ?> map = (Map<?,?>) propVal;
-                        rv.merge(saveMapFields(descriptor, key, keyBytes, colBase, (MapPropertyMetadata) colMeta, map, clock, mutator));
+                        rv.merge(saveMapFields(descriptor, key, keyBytes, colBase, (MapPropertyMetadata) colMeta, map, clock, mutator, level));
                     }
                     
                     colBase.remove(colBase.size()-1);
@@ -258,7 +270,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
      * column:    index value:rowkey
      * value:     meaningless
      */
-    private void addIndexWrite(Object key, Object value, BitSet dirty, IndexMetadata idxMeta, long clock, Mutator<byte[]> mutator)
+    private void addIndexWrite(Object key, Object value, BitSet dirty, IndexMetadata idxMeta, long clock, Mutator<byte[]> mutator, EConsistencyLevel level)
     {
         List<Object> propVals = null;
         DynamicComposite colName = new DynamicComposite();
@@ -312,7 +324,8 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                                      MapPropertyMetadata colMeta, 
                                      Map<?, ?> map, 
                                      long clock, 
-                                     Mutator<byte[]> mutator)
+                                     Mutator<byte[]> mutator,
+                                     EConsistencyLevel level)
     {
         SaveStatus status = new SaveStatus();
         if(map == null)
@@ -350,7 +363,8 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                                       (ListPropertyMetadata) valuePropertyMeta, 
                                       (List<?>) entry.getValue(), 
                                       clock, 
-                                      mutator));
+                                      mutator,
+                                      level));
                 colName.remove(colName.size() - 1);
             }
             else if(t == EPropertyType.MAP || t == EPropertyType.SORTED_MAP)
@@ -364,7 +378,8 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                                      (MapPropertyMetadata) valuePropertyMeta, 
                                      subMap, 
                                      clock, 
-                                     mutator));
+                                     mutator,
+                                     level));
                 colName.remove(colName.size() - 1);
             }
             else if(t == EPropertyType.OBJECT)
@@ -381,7 +396,8 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                                        clock,
                                        mutator,
                                        colName,
-                                       true));
+                                       true,
+                                       level));
                 
                 colName.remove(colName.size() - 1);
             }
@@ -403,7 +419,8 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                                       ListPropertyMetadata colMeta, 
                                       List<?> list, 
                                       long clock, 
-                                      Mutator<byte[]> mutator)
+                                      Mutator<byte[]> mutator,
+                                      EConsistencyLevel level)
     {
         SaveStatus status = new SaveStatus();
         
@@ -450,7 +467,8 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                                           (ListPropertyMetadata) elementPropertyMeta, 
                                           (List<?>) listVal, 
                                           clock, 
-                                          mutator));
+                                          mutator,
+                                          level));
                     colName.remove(colName.size() - 1);
                 }
                 else if(t == EPropertyType.MAP || t == EPropertyType.SORTED_MAP)
@@ -463,7 +481,8 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                                          (MapPropertyMetadata) elementPropertyMeta, 
                                          (Map<?,?>) listVal, 
                                          clock, 
-                                         mutator));
+                                         mutator,
+                                         level));
                     colName.remove(colName.size() - 1);
                 }
                 else if(t == EPropertyType.OBJECT)
@@ -480,7 +499,8 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                                            clock,
                                            mutator,
                                            colName,
-                                           true));
+                                           true,
+                                           level));
                     
                     colName.remove(colName.size() - 1);
                 }
@@ -499,7 +519,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
             _logger.debug("{}[{}] list shortened. deleting last {} entries",
                           new Object[]{descriptor, size - dbIdx});
             
-            Mutator<byte[]> delMutator = HFactory.createMutator(_keyspaceFactory.createKeyspace(), SER_BYTES);
+            Mutator<byte[]> delMutator = HFactory.createMutator(_keyspaceFactory.createKeyspace(level), SER_BYTES);
             for(int i = dbIdx; i < size; i++)
             {
                 String keyStr = null;

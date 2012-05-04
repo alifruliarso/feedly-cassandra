@@ -26,6 +26,7 @@ import org.apache.commons.lang.ArrayUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.feedly.cassandra.EConsistencyLevel;
 import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.IndexMetadata;
@@ -69,23 +70,27 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
 
     public Collection<V> mfind(V template, FindOptions options, IndexMetadata index)
     {
-        RangeIndexQueryResult<K> result = findKeys(template, template, EFindOrder.NONE, options.getMaxRows(), index);
+        RangeIndexQueryResult<K> result = findKeys(template, template, EFindOrder.NONE, options.getMaxRows(), index, options.getConsistencyLevel());
         
         IValueFilter<V> filter = new EqualityValueFilter<V>(_entityMeta, template, index);
-        return new LazyLoadedCollection(result, filter, options, EFindOrder.NONE, index);
+        return new LazyLoadedCollection(result, filter, options, EFindOrder.NONE, index, options.getConsistencyLevel());
     }
     
 
     public Collection<V> mfindBetween(V startTemplate, V endTemplate, FindBetweenOptions options, IndexMetadata index)
     {
-        RangeIndexQueryResult<K> result = findKeys(startTemplate, endTemplate, options.getRowOrder(), options.getMaxRows(), index);
+        RangeIndexQueryResult<K> result = findKeys(startTemplate, endTemplate, options.getRowOrder(), options.getMaxRows(), index, options.getConsistencyLevel());
         
         IValueFilter<V> f = new RangeValueFilter<V>(_entityMeta, startTemplate, endTemplate, index);
-        return new LazyLoadedCollection(result, f, options, options.getRowOrder(), index);
+        return new LazyLoadedCollection(result, f, options, options.getRowOrder(), index, options.getConsistencyLevel());
     }
 
 
-    private List<IndexedValue<V>> filterValues(RangeIndexQueryResult<K> queryResult, List<V> values, IValueFilter<V> filter, IndexMetadata index)
+    private List<IndexedValue<V>> filterValues(RangeIndexQueryResult<K> queryResult, 
+                                               List<V> values, 
+                                               IValueFilter<V> filter, 
+                                               IndexMetadata index,
+                                               EConsistencyLevel level)
     {
         List<StaleIndexValue> filtered = null;
         List<IndexedValue<V>> rv = new ArrayList<IndexedValue<V>>();
@@ -155,7 +160,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
         
         if(filtered != null)
         {
-            _staleValueStrategy.handle(_entityMeta, index, filtered);
+            _staleValueStrategy.handle(_entityMeta, index, level, filtered);
             
             _logger.info("filtered {} stale values from index [{}]. {} excluded, retained {}", 
                          new Object[] { filtered.size(), index, excludedCnt, rv.size() });
@@ -208,7 +213,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
      * column:    index value:rowkey
      * value:     meaningless
      */
-    private RangeIndexQueryResult<K> findKeys(V startTemplate, V endTemplate, EFindOrder rowOrder, int maxKeys, IndexMetadata index)
+    private RangeIndexQueryResult<K> findKeys(V startTemplate, V endTemplate, EFindOrder rowOrder, int maxKeys, IndexMetadata index, EConsistencyLevel level)
     {
         List<Object> startPropVals = indexValues(startTemplate, index);
         List<Object> endPropVals;
@@ -240,7 +245,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
         DynamicComposite endCol = new DynamicComposite(endPropVals);
         endCol.setEquality(ComponentEquality.GREATER_THAN_EQUAL);
         
-        return fetchInitialBatch(rowKeys.toArray(new DynamicComposite[rowKeys.size()]), startCol, endCol, rowOrder, index);
+        return fetchInitialBatch(rowKeys.toArray(new DynamicComposite[rowKeys.size()]), startCol, endCol, rowOrder, index, level);
     }
     
     @SuppressWarnings("unchecked")
@@ -248,7 +253,8 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
                                                        DynamicComposite startCol,
                                                        DynamicComposite endCol,
                                                        EFindOrder colOrder, 
-                                                       IndexMetadata index)
+                                                       IndexMetadata index,
+                                                       EConsistencyLevel level)
     {
         RangeIndexQueryResult<K> rv = new RangeIndexQueryResult<K>();
         List<RangeIndexQueryPartitionResult> partitionResults = rv.getPartitionResults();
@@ -256,7 +262,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
         if(colOrder == EFindOrder.NONE) //can attempt to find all rows at once
         {
             MultigetSliceQuery<DynamicComposite,DynamicComposite,byte[]> multiGetQuery =
-                    HFactory.createMultigetSliceQuery(_keyspaceFactory.createKeyspace(), SER_COMPOSITE, SER_COMPOSITE, SER_BYTES);
+                    HFactory.createMultigetSliceQuery(_keyspaceFactory.createKeyspace(level), SER_COMPOSITE, SER_COMPOSITE, SER_BYTES);
             
             multiGetQuery.setKeys(partitionKeys);
             multiGetQuery.setColumnFamily(_entityMeta.getIndexFamilyName());
@@ -337,7 +343,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
                     pr.setStartCol(startCol);
                     pr.setEndCol(endCol);
                     
-                    int fetchCnt = fetchFromPartition(rv, pr, colOrder, 0);
+                    int fetchCnt = fetchFromPartition(rv, pr, colOrder, 0, level);
                     foundResults = fetchCnt > 0;
                     
                     if(foundResults)
@@ -360,7 +366,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
         return rv;
     }
     
-    private void fetchBatch(RangeIndexQueryResult<K> result, int maxRows, EFindOrder order, IndexMetadata index)
+    private void fetchBatch(RangeIndexQueryResult<K> result, int maxRows, EFindOrder order, IndexMetadata index, EConsistencyLevel level)
     {
         if(!result.hasMore())
             return;
@@ -376,7 +382,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
             RangeIndexQueryPartitionResult p = partitionResults.get(i);
             if(p.hasMore())
             {
-                fetchCnt = fetchFromPartition(result, p, order, i);
+                fetchCnt = fetchFromPartition(result, p, order, i, level);
                 
                 if(fetchCnt > 0)
                     break;
@@ -397,10 +403,11 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
     private List<HColumn<DynamicComposite, byte[]>> executeSliceQuery(DynamicComposite partitionKey,
                                                                       DynamicComposite startCol,
                                                                       DynamicComposite endCol,
-                                                                      EFindOrder colOrder)
+                                                                      EFindOrder colOrder,
+                                                                      EConsistencyLevel level)
     {
         SliceQuery<DynamicComposite,DynamicComposite,byte[]> query =
-                HFactory.createSliceQuery(_keyspaceFactory.createKeyspace(), SER_COMPOSITE, SER_COMPOSITE, SER_BYTES);
+                HFactory.createSliceQuery(_keyspaceFactory.createKeyspace(level), SER_COMPOSITE, SER_COMPOSITE, SER_BYTES);
         
         query.setKey(partitionKey);
         query.setColumnFamily(_entityMeta.getIndexFamilyName());
@@ -418,12 +425,14 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
     private int fetchFromPartition(RangeIndexQueryResult<K> result,
                                    RangeIndexQueryPartitionResult p, 
                                    EFindOrder order,
-                                   int pos)
+                                   int pos,
+                                   EConsistencyLevel level)
     {
         List<HColumn<DynamicComposite,byte[]>> columns = executeSliceQuery(p.getPartitionKey(), 
                                                                            p.getStartCol(), 
                                                                            p.getEndCol(), 
-                                                                           order); 
+                                                                           order,
+                                                                           level); 
     
         if(!columns.isEmpty())
         {
@@ -460,7 +469,12 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
         return columns.size();
     }
 
-    private List<V> toRows(RangeIndexQueryResult<K> result, FindOptions options, EFindOrder order, IValueFilter<V> filter, IndexMetadata index)
+    private List<V> toRows(RangeIndexQueryResult<K> result, 
+                           FindOptions options, 
+                           EFindOrder order, 
+                           IValueFilter<V> filter, 
+                           IndexMetadata index,
+                           EConsistencyLevel level)
     {
         if(options.getColumnFilterStrategy() == EColumnFilterStrategy.INCLUDES)
         {
@@ -482,7 +496,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
 
         List<V> rows = _getHelper.mget(result.getCurrentKeys(), null, options);
         
-        List<IndexedValue<V>> values = filterValues(result, rows, filter, index);
+        List<IndexedValue<V>> values = filterValues(result, rows, filter, index, level);
         rows.clear();
         
         if(!values.isEmpty())
@@ -512,6 +526,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
         private final IndexMetadata _index;
         private final IValueFilter<V> _filter;
         private final LazyLoadedCollection _parent;
+        private final EConsistencyLevel _level;
         
         @SuppressWarnings("unchecked")
         public LazyLoadedIterator(LazyLoadedCollection parent, 
@@ -520,7 +535,8 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
                                   IValueFilter<V> filter,
                                   FindOptions options,
                                   EFindOrder order,
-                                  IndexMetadata index)
+                                  IndexMetadata index, 
+                                  EConsistencyLevel level)
         {
             _parent = parent;
             _current = first;
@@ -530,7 +546,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
             _options = options;
             _order = order;
             _index = index;
-            
+            _level = level;
             try
             {
                 _result = (RangeIndexQueryResult<K>) result.clone();
@@ -572,8 +588,8 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
                 List<V> rows = Collections.emptyList();
                 while(rows.isEmpty() && _result.hasMore())
                 {
-                    fetchBatch(_result, _options.getMaxRows(), _order, _index);
-                    rows = toRows(_result, _options, _order, _filter, _index);
+                    fetchBatch(_result, _options.getMaxRows(), _order, _index, _level);
+                    rows = toRows(_result, _options, _order, _filter, _index, _level);
                 }
                 
                 if(rows.size() >= _remRows)
@@ -619,34 +635,38 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
     
     private class LazyLoadedCollection extends AbstractCollection<V>
     {
-        private RangeIndexQueryResult<K> _result;
-        private IValueFilter<V> _filter;
-        private FindOptions _options;
-        private EFindOrder _order;
-        private IndexMetadata _index;
+        private final RangeIndexQueryResult<K> _result;
+        private final IValueFilter<V> _filter;
+        private final FindOptions _options;
+        private final EFindOrder _order;
+        private final IndexMetadata _index;
         private List<V> _all = null; //if it is known all rows have been fetched, this field is set
         private List<V> _first;
         private int _size = -1;
+        private final EConsistencyLevel _level;
         
         public LazyLoadedCollection(RangeIndexQueryResult<K> result,
                                     IValueFilter<V> filter,
                                     FindOptions options,
                                     EFindOrder order,
-                                    IndexMetadata index)
+                                    IndexMetadata index,
+                                    EConsistencyLevel level)
         {
             _result = result;
             _filter = filter;
             _options = options;
             _order = order;
             _index = index;
+            _level = level;
+            
             int maxRows = _options.getMaxRows();
             
-            List<V> rows = toRows(result, options, order, filter, index);
+            List<V> rows = toRows(result, options, order, filter, index, level);
 
             while(rows.isEmpty() && result.hasMore())
             {
-                fetchBatch(result, options.getMaxRows(), order, index);
-                rows = toRows(result, options, order, filter, index);
+                fetchBatch(result, options.getMaxRows(), order, index, _level);
+                rows = toRows(result, options, order, filter, index, level);
             }
             
             if(!result.hasMore() || result.getCurrentValues().size() >= maxRows)
@@ -698,7 +718,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
             if(_all != null)
                 return _all.iterator();
             
-            return new LazyLoadedIterator(this, _first, _result, _filter, _options, _order, _index);
+            return new LazyLoadedIterator(this, _first, _result, _filter, _options, _order, _index, _level);
         }
         
         void setSize(int size)

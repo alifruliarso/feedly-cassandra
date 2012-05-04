@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.feedly.cassandra.EConsistencyLevel;
 import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.IndexMetadata;
@@ -70,7 +71,7 @@ public class OfflineRepairStrategy implements IStaleIndexValueStrategy
     }
 
     @Override
-    public void handle(final EntityMetadata<?> entity, final IndexMetadata index, final Collection<StaleIndexValue> values)
+    public void handle(final EntityMetadata<?> entity, final IndexMetadata index, final EConsistencyLevel level, final Collection<StaleIndexValue> values)
     {
         try
         {
@@ -80,7 +81,7 @@ public class OfflineRepairStrategy implements IStaleIndexValueStrategy
                                  @Override
                                  public void run()
                                  {
-                                     _strategy.handle(entity, index, values);
+                                     _strategy.handle(entity, index, level, values);
                                  }
                              });
         }

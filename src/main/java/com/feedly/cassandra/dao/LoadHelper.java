@@ -21,6 +21,7 @@ import me.prettyprint.hector.api.factory.HFactory;
 import me.prettyprint.hector.api.query.MultigetSliceQuery;
 import me.prettyprint.hector.api.query.SliceQuery;
 
+import com.feedly.cassandra.EConsistencyLevel;
 import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.entity.ByteIndicatorSerializer;
 import com.feedly.cassandra.entity.EPropertyType;
@@ -461,7 +462,8 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
     protected V fromColumnSlice(K key, V value, 
                               SimplePropertyMetadata keyMeta, byte[] keyBytes, 
                               SliceQuery<byte[], byte[], byte[]> query, ColumnSlice<byte[], byte[]> slice,
-                              byte[] rangeEnd)
+                              byte[] rangeEnd,
+                              EConsistencyLevel level)
     {
         List<HColumn<byte[], byte[]>> columns = slice.getColumns();
         byte[] firstCol = null;
@@ -475,7 +477,7 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
             if(hasMore) //need to fetch more
             {
                 if(query == null)
-                    query = buildSliceQuery(keyBytes);
+                    query = buildSliceQuery(keyBytes, level);
 
                 firstCol = columns.get(columns.size() - 1).getName();
                 
@@ -609,10 +611,10 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
      * @return the updated values
      */
     @SuppressWarnings({ "rawtypes", "unchecked" })
-    protected List<V> bulkLoadFromMultiGet(Collection<K> keys, List<V> values, List<byte[]> colNames, byte[] first, byte[] last, boolean maintainOrder)
+    protected List<V> bulkLoadFromMultiGet(Collection<K> keys, List<V> values, List<byte[]> colNames, byte[] first, byte[] last, boolean maintainOrder, EConsistencyLevel level)
     {
         SimplePropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
-        MultigetSliceQuery<byte[], byte[], byte[]> query = HFactory.createMultigetSliceQuery(_keyspaceFactory.createKeyspace(),
+        MultigetSliceQuery<byte[], byte[], byte[]> query = HFactory.createMultigetSliceQuery(_keyspaceFactory.createKeyspace(level),
                                                                                              SER_BYTES,
                                                                                              SER_BYTES,
                                                                                              SER_BYTES);
@@ -667,7 +669,7 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
                 value = values.get(pos.get(key));
             }
 
-            value = fromColumnSlice(key, value, keyMeta, row.getKey(), null, row.getColumnSlice(), last);
+            value = fromColumnSlice(key, value, keyMeta, row.getKey(), null, row.getColumnSlice(), last, level);
 
             if(value != null)
             {
@@ -689,12 +691,12 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
      * @param ranges the properties to fetch
      * @return the updated values
      */
-    protected List<V> addCollectionRanges(List<K> keys, List<V> values, List<CollectionRange> ranges)
+    protected List<V> addCollectionRanges(List<K> keys, List<V> values, List<CollectionRange> ranges, EConsistencyLevel level)
     {
         if(ranges != null)
         {
             for(CollectionRange r : ranges)
-                values = bulkLoadFromMultiGet(keys, values, null, r.startBytes(), r.endBytes(), true);
+                values = bulkLoadFromMultiGet(keys, values, null, r.startBytes(), r.endBytes(), true, level);
         }
 
         return values;
@@ -705,9 +707,9 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
      * @param keyBytes
      * @return
      */
-    protected SliceQuery<byte[], byte[], byte[]> buildSliceQuery(byte[] keyBytes)
+    protected SliceQuery<byte[], byte[], byte[]> buildSliceQuery(byte[] keyBytes, EConsistencyLevel level)
     {
-        SliceQuery<byte[], byte[], byte[]> query = HFactory.createSliceQuery(_keyspaceFactory.createKeyspace(), SER_BYTES, SER_BYTES, SER_BYTES);
+        SliceQuery<byte[], byte[], byte[]> query = HFactory.createSliceQuery(_keyspaceFactory.createKeyspace(level), SER_BYTES, SER_BYTES, SER_BYTES);
         
         query.setKey(keyBytes);
         query.setColumnFamily(_entityMeta.getFamilyName());

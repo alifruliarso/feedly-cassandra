@@ -5,9 +5,12 @@ import java.lang.reflect.Type;
 import java.util.Collection;
 import java.util.List;
 
+import me.prettyprint.hector.api.Keyspace;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.feedly.cassandra.EConsistencyLevel;
 import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.IndexMetadata;
@@ -30,6 +33,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     static final int COL_RANGE_SIZE = 100;
     static final int ROW_RANGE_SIZE = 100;
     private final EntityMetadata<V> _entityMeta;
+    private final EConsistencyLevel _defaultConsistency;
     private GetHelper<K, V> _getHelper;
     private FindHelper<K, V> _findHelper;
     private PutHelper<K, V> _putHelper;
@@ -39,11 +43,11 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     
     protected CassandraDaoBase()
     {
-        this(null, null);
+        this(null, null, null);
     }
 
     @SuppressWarnings("unchecked")
-    protected CassandraDaoBase(Class<K> keyClass, Class<V> valueClass)
+    protected CassandraDaoBase(Class<K> keyClass, Class<V> valueClass, EConsistencyLevel defaultConsistency)
     {
         if(keyClass == null)
         {
@@ -61,6 +65,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
                 throw new IllegalStateException("could not determine value class");
         }
 
+        _defaultConsistency = defaultConsistency != null ? defaultConsistency : EConsistencyLevel.QUOROM;
 
         _entityMeta = new EntityMetadata<V>(valueClass);
 
@@ -94,17 +99,30 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
             _staleIndexValueStrategy = 
                     new IStaleIndexValueStrategy()
                     {
-                        public void handle(EntityMetadata<?> entity, IndexMetadata index, Collection<StaleIndexValue> values)
+                        public void handle(EntityMetadata<?> entity, IndexMetadata index, EConsistencyLevel level, Collection<StaleIndexValue> values)
                         {
                             _logger.warn("not handling {} stale values for {}", values.size(), entity.getFamilyName());
                         }
                     };
         }
         
-        _getHelper = new GetHelper<K, V>(_entityMeta, _keyspaceFactory);
-        _findHelper = new FindHelper<K, V>(_entityMeta, _keyspaceFactory, _staleIndexValueStrategy);
-        _putHelper = new PutHelper<K, V>(_entityMeta, _keyspaceFactory);
-        _deleteHelper = new DeleteHelper<K, V>(_entityMeta, _keyspaceFactory);
+        IKeyspaceFactory withDefault = 
+            new IKeyspaceFactory()
+            {
+                @Override
+                public Keyspace createKeyspace(EConsistencyLevel level)
+                {
+                    if(level == null)
+                        level = _defaultConsistency;
+                    
+                    return _keyspaceFactory.createKeyspace(level);
+                }
+            };
+        
+        _getHelper = new GetHelper<K, V>(_entityMeta, withDefault);
+        _findHelper = new FindHelper<K, V>(_entityMeta, withDefault, _staleIndexValueStrategy);
+        _putHelper = new PutHelper<K, V>(_entityMeta, withDefault);
+        _deleteHelper = new DeleteHelper<K, V>(_entityMeta, withDefault);
     }
     
     private boolean keyClassMatches(Class<?> fieldType, Class<?> keyType)
@@ -173,16 +191,34 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     @Override
     public final void put(V value)
     {
-        _putHelper.put(value);
+        put(value, null);
     }
 
+    @Override
+    public final void put(V value, PutOptions options)
+    {
+        if(options == null)
+            options = new PutOptions();
+        
+        _putHelper.put(value, options);
+    }
+    
     
     @Override
     public final void mput(Collection<V> values)
     {
-        _putHelper.mput(values);
+        mput(values, null);
     }
 
+    @Override
+    public final void mput(Collection<V> values, PutOptions options)
+    {
+        if(options == null)
+            options = new PutOptions();
+        
+        _putHelper.mput(values, options);
+    }
+    
     @Override
     public final V get(K key)
     {
@@ -273,12 +309,29 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     @Override
     public void delete(K key)
     {
-        _deleteHelper.delete(key);
+        delete(key, null);
     }
 
     @Override
+    public void delete(K key, DeleteOptions options)
+    {
+        if(options == null)
+            options = new DeleteOptions();
+        _deleteHelper.delete(key, options);
+    }
+    
+    @Override
     public void mdelete(Collection<K> keys)
     {
-        _deleteHelper.mdelete(keys);
+        mdelete(keys, null);
+    }
+
+    @Override
+    public void mdelete(Collection<K> keys, DeleteOptions options)
+    {
+        if(options == null)
+            options = new DeleteOptions();
+        
+        _deleteHelper.mdelete(keys, options);
     }
 }

@@ -19,16 +19,16 @@ class DeleteHelper<K, V> extends DaoHelperBase<K, V>
         super(meta, factory);
     }
 
-    public void delete(K key)
+    public void delete(K key, DeleteOptions options)
     {
-        mdelete(Collections.singleton(key));
+        mdelete(Collections.singleton(key), options);
     }
 
     //for now, not cleaning up indexes, it's assumed subsequent finds will eventually clean up stale entries
-    public void mdelete(Collection<K> keys)
+    public void mdelete(Collection<K> keys, DeleteOptions options)
     {
         SimplePropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
-        Keyspace keyspace = _keyspaceFactory.createKeyspace();
+        Keyspace keyspace = _keyspaceFactory.createKeyspace(options.getConsistencyLevel());
         Mutator<byte[]> mutator = HFactory.createMutator(keyspace, SER_BYTES);
         
         for(K key : keys)

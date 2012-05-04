@@ -4,5 +4,5 @@ import me.prettyprint.hector.api.Keyspace;
 
 public interface IKeyspaceFactory
 {
-    Keyspace createKeyspace();
+    Keyspace createKeyspace(EConsistencyLevel level);
 }
