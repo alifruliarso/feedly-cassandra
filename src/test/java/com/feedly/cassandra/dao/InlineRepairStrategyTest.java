@@ -34,7 +34,6 @@ public class InlineRepairStrategyTest extends CassandraServiceTestBase
         _dao = new IndexedBeanDao();
         _dao.setKeyspaceFactory(_pm);
         InlineRepairStrategy strategy = new InlineRepairStrategy();
-        strategy.setKeyspaceFactory(_pm);
         _dao.setStaleValueIndexStrategy(strategy);
         _dao.init();
         

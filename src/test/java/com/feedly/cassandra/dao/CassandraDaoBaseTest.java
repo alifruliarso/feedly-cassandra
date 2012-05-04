@@ -23,6 +23,7 @@ import me.prettyprint.cassandra.serializers.DynamicCompositeSerializer;
 import me.prettyprint.cassandra.serializers.IntegerSerializer;
 import me.prettyprint.cassandra.serializers.LongSerializer;
 import me.prettyprint.cassandra.serializers.StringSerializer;
+import me.prettyprint.hector.api.Keyspace;
 import me.prettyprint.hector.api.beans.ColumnSlice;
 import me.prettyprint.hector.api.beans.DynamicComposite;
 import me.prettyprint.hector.api.beans.HColumn;
@@ -2879,7 +2880,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         List<StaleIndexUpdateRecord> records = new ArrayList<StaleIndexUpdateRecord>();
         
         @Override
-        public void handle(EntityMetadata<?> entity, IndexMetadata index, EConsistencyLevel level, Collection<StaleIndexValue> values)
+        public void handle(EntityMetadata<?> entity, IndexMetadata index, Keyspace keyspace, Collection<StaleIndexValue> values)
         {
             StaleIndexUpdateRecord record = new StaleIndexUpdateRecord();
             record.entityMetadata = entity;

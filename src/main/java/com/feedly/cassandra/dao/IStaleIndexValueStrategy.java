@@ -2,7 +2,8 @@ package com.feedly.cassandra.dao;
 
 import java.util.Collection;
 
-import com.feedly.cassandra.EConsistencyLevel;
+import me.prettyprint.hector.api.Keyspace;
+
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.IndexMetadata;
 
@@ -15,5 +16,8 @@ import com.feedly.cassandra.entity.IndexMetadata;
  */
 public interface IStaleIndexValueStrategy
 {
-    public void handle(EntityMetadata<?> entity, IndexMetadata index, EConsistencyLevel level, Collection<StaleIndexValue> values);
+    public void handle(EntityMetadata<?> entity, 
+                       IndexMetadata index, 
+                       Keyspace keyspace, 
+                       Collection<StaleIndexValue> values);
 }

@@ -99,7 +99,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
             _staleIndexValueStrategy = 
                     new IStaleIndexValueStrategy()
                     {
-                        public void handle(EntityMetadata<?> entity, IndexMetadata index, EConsistencyLevel level, Collection<StaleIndexValue> values)
+                        public void handle(EntityMetadata<?> entity, IndexMetadata index, Keyspace keyspace, Collection<StaleIndexValue> values)
                         {
                             _logger.warn("not handling {} stale values for {}", values.size(), entity.getFamilyName());
                         }

@@ -3,6 +3,7 @@ package com.feedly.cassandra.dao;
 import java.util.Collection;
 
 import me.prettyprint.cassandra.serializers.DynamicCompositeSerializer;
+import me.prettyprint.hector.api.Keyspace;
 import me.prettyprint.hector.api.beans.DynamicComposite;
 import me.prettyprint.hector.api.factory.HFactory;
 import me.prettyprint.hector.api.mutation.Mutator;
@@ -10,8 +11,6 @@ import me.prettyprint.hector.api.mutation.Mutator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.feedly.cassandra.EConsistencyLevel;
-import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.IndexMetadata;
 
@@ -25,19 +24,12 @@ public class InlineRepairStrategy implements IStaleIndexValueStrategy
     
     private static final DynamicCompositeSerializer SER_COMPOSITE = new DynamicCompositeSerializer();
     
-    private IKeyspaceFactory _keyspaceFactory;
-    
-    public void setKeyspaceFactory(IKeyspaceFactory keyspaceFactory)
-    {
-        _keyspaceFactory = keyspaceFactory;
-    }
-
     @Override
-    public void handle(EntityMetadata<?> entity, IndexMetadata index, EConsistencyLevel level, Collection<StaleIndexValue> values)
+    public void handle(EntityMetadata<?> entity, IndexMetadata index, Keyspace keyspace, Collection<StaleIndexValue> values)
     {
         try
         {
-            Mutator<DynamicComposite> mutator = HFactory.createMutator(_keyspaceFactory.createKeyspace(level), SER_COMPOSITE);
+            Mutator<DynamicComposite> mutator = HFactory.createMutator(keyspace, SER_COMPOSITE);
             
             _logger.debug("deleting {} stale values from {}", values.size(), entity.getIndexFamilyName());
             for(StaleIndexValue value : values)

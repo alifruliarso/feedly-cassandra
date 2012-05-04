@@ -36,7 +36,6 @@ public class OfflineRepairStrategyTest extends CassandraServiceTestBase
         _dao = new IndexedBeanDao();
         _dao.setKeyspaceFactory(_pm);
         _strategy = new OfflineRepairStrategy();
-        _strategy.setKeyspaceFactory(_pm);
         _strategy.init();
         _dao.setStaleValueIndexStrategy(_strategy);
         _dao.init();

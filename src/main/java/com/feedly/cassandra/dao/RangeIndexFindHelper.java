@@ -160,7 +160,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
         
         if(filtered != null)
         {
-            _staleValueStrategy.handle(_entityMeta, index, level, filtered);
+            _staleValueStrategy.handle(_entityMeta, index, _keyspaceFactory.createKeyspace(level), filtered);
             
             _logger.info("filtered {} stale values from index [{}]. {} excluded, retained {}", 
                          new Object[] { filtered.size(), index, excludedCnt, rv.size() });

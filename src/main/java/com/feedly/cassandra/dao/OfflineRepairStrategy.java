@@ -9,11 +9,11 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import me.prettyprint.hector.api.Keyspace;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.feedly.cassandra.EConsistencyLevel;
-import com.feedly.cassandra.IKeyspaceFactory;
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.IndexMetadata;
 
@@ -27,7 +27,6 @@ public class OfflineRepairStrategy implements IStaleIndexValueStrategy
 {
     private static final Logger _logger = LoggerFactory.getLogger(OfflineRepairStrategy.class.getName());
     private static final AtomicInteger _threadId = new AtomicInteger();
-    private IKeyspaceFactory _keyspaceFactory;
     private InlineRepairStrategy _strategy;
     private int _threadCount = 1;
     private int _queueSize = 1000;
@@ -37,7 +36,6 @@ public class OfflineRepairStrategy implements IStaleIndexValueStrategy
     public void init()
     {
         _strategy = new InlineRepairStrategy();
-        _strategy.setKeyspaceFactory(_keyspaceFactory);
         _executor = new ThreadPoolExecutor(1, _threadCount, 10, TimeUnit.SECONDS,
                                            new LinkedBlockingQueue<Runnable>(_queueSize),
                                            new ThreadFactory()
@@ -70,32 +68,6 @@ public class OfflineRepairStrategy implements IStaleIndexValueStrategy
         }
     }
 
-    @Override
-    public void handle(final EntityMetadata<?> entity, final IndexMetadata index, final EConsistencyLevel level, final Collection<StaleIndexValue> values)
-    {
-        try
-        {
-            _executor.submit(
-                             new Runnable()
-                             {
-                                 @Override
-                                 public void run()
-                                 {
-                                     _strategy.handle(entity, index, level, values);
-                                 }
-                             });
-        }
-        catch(RejectedExecutionException ree)
-        {
-            _logger.warn("system shutting down, dropping repair update");
-        }
-    }
-
-    public void setKeyspaceFactory(IKeyspaceFactory keyspaceFactory)
-    {
-        _keyspaceFactory = keyspaceFactory;
-    }
-
     /**
      * set the thread pool size.
      * @param threadCount
@@ -114,4 +86,25 @@ public class OfflineRepairStrategy implements IStaleIndexValueStrategy
         _queueSize = queueSize;
     }
 
+
+    @Override
+    public void handle(final EntityMetadata<?> entity, final IndexMetadata index, final Keyspace keyspace, final Collection<StaleIndexValue> values)
+    {
+        try
+        {
+            _executor.submit(
+                             new Runnable()
+                             {
+                                 @Override
+                                 public void run()
+                                 {
+                                     _strategy.handle(entity, index, keyspace, values);
+                                 }
+                             });
+        }
+        catch(RejectedExecutionException ree)
+        {
+            _logger.warn("system shutting down, dropping repair update");
+        }
+    }
 }
