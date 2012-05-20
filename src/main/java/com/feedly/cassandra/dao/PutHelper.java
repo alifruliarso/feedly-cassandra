@@ -94,7 +94,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
             if(status.updateCnt == 0)
                 _logger.info("no updates for {}[{}]", _entityMeta.getType().getSimpleName(), key);
             
-            _logger.debug("updated {} values for {}[{}]", new Object[] { status.updateCnt, _entityMeta.getType().getSimpleName(), key });
+            _logger.debug("updated {} values for {}[{}] w/clock {}", new Object[] { status.updateCnt, _entityMeta.getType().getSimpleName(), key, clock });
             
             if(status.indexUpdateCnt > 0)
             {

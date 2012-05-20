@@ -2,22 +2,24 @@ package com.feedly.cassandra.dao;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 class RangeIndexQueryResult<K> implements Cloneable
 {
-    private List<K> _currentKeys = new ArrayList<K>(); //not really sorted, just reliably ordered
+    private Set<K> _currentKeys = new HashSet<K>(); 
     private Map<K, List<StaleIndexValue>> _currentValues = new HashMap<K, List<StaleIndexValue>>();
     private List<RangeIndexQueryPartitionResult> _partitionResults = new ArrayList<RangeIndexQueryPartitionResult>();
     private int _nextPartitionIdx; //index of partition that potentially has more results left to fetch
     
-    public List<K> getCurrentKeys()
+    public Set<K> getCurrentKeys()
     {
         return _currentKeys;
     }
 
-    public void setCurrentKeys(List<K> currentKeys)
+    public void setCurrentKeys(Set<K> currentKeys)
     {
         _currentKeys = currentKeys;
     }
@@ -81,7 +83,7 @@ class RangeIndexQueryResult<K> implements Cloneable
     {
         @SuppressWarnings("unchecked")
         RangeIndexQueryResult<K> copy = (RangeIndexQueryResult<K>) super.clone();
-        copy._currentKeys = new ArrayList<K>(_currentKeys);
+        copy._currentKeys = new HashSet<K>(_currentKeys);
         copy._currentValues = new HashMap<K, List<StaleIndexValue>>();
         
         for(Map.Entry<K, List<StaleIndexValue>> entry : _currentValues.entrySet())

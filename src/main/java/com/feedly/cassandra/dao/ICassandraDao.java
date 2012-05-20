@@ -65,7 +65,7 @@ public interface ICassandraDao<K, V>
     /**
      * fetch entities by row key, using default options. This is functionally equivalent to {@link #get(Object)}, the main difference will 
      * be improved performance by batching the reads.
-     * @param keys the row keys
+     * @param keys the row keys. each key should exist in the collection at most once.
      * @return the entities.
      */
     public Collection<V> mget(Collection<K> keys);
@@ -89,10 +89,11 @@ public interface ICassandraDao<K, V>
     /**
      * fetch entities by row key, using specified options. This is functionally equivalent to {@link #get(Object, Object, GetOptions)}, the
      *  main difference will be improved performance by batching the reads.
-     * @param keys the row keys.
+     * @param keys the row keys. each key should exist in the collection at most once.
      * @param value a previous value. If non null this value is updated and returned. One can do this to do multiple column range mgets.
      * @param options the get options.
-     * @return the entity, null if non-existent
+     * @return the list of values, with identical ordering to the <code>keys</code> param. This means that the list may contain null values
+     * if values do not exist.
      */
     public List<V> mget(List<K> keys, List<V> values, GetOptions options); //end is inclusive
     

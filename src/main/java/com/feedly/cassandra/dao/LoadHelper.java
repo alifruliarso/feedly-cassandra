@@ -420,7 +420,6 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
         _logger.trace("{}.{} = {}", new Object[]{descriptor, pname, pval});
     }
 
-    @SuppressWarnings("unchecked")
     private void loadUnmappedProperty(StringBuilder descriptor,
                                       MapPropertyMetadata pm,
                                       Object entity,
@@ -613,6 +612,12 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
     @SuppressWarnings({ "rawtypes", "unchecked" })
     protected List<V> bulkLoadFromMultiGet(Collection<K> keys, List<V> values, List<byte[]> colNames, byte[] first, byte[] last, boolean maintainOrder, EConsistencyLevel level)
     {
+        if(!(keys instanceof Set))
+        {
+            if(new HashSet<K>(keys).size() != keys.size()) //perhaps wasteful but duplicate keys being passed can cause lots of nasty problems...
+                throw new IllegalArgumentException("duplicate keys exist");
+        }
+        
         SimplePropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
         MultigetSliceQuery<byte[], byte[], byte[]> query = HFactory.createMultigetSliceQuery(_keyspaceFactory.createKeyspace(level),
                                                                                              SER_BYTES,

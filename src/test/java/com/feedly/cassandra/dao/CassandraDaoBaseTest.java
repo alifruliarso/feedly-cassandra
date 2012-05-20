@@ -850,6 +850,17 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
     @Test
     public void testSimpleMget()
     {
+        
+        try
+        {
+            _dao.mget(Arrays.asList(-1L, -1L));
+            fail("duplicate keys not allowed");
+        }
+        catch(IllegalArgumentException ex)
+        {
+            //success
+        }
+        
         int numBeans = 5;
         List<SampleBean> beans = new ArrayList<SampleBean>();
         List<Long> keys = new ArrayList<Long>();
@@ -1445,11 +1456,20 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
 
         _dao.mput(beans);
 
+        keys.add(-52345L);//non existent
+        keys.add(2, -7234324324L);//non existent
         List<SampleBean> bulkActuals = _dao.mget(keys, null, new GetOptions(null, Collections.singleton("boolVal")));
         List<SampleBean> bulkAllActuals = new ArrayList<SampleBean>(_dao.mgetAll(new GetOptions(null, Collections.singleton("boolVal"))));
 
+        assertEquals(keys.size(), bulkActuals.size());
+        assertNull(bulkActuals.remove(bulkActuals.size()-1));
+        assertNull(bulkActuals.remove(2));
+        keys.remove(keys.size()-1);
+        keys.remove(2);
+        
         Collections.sort(bulkActuals);
         Collections.sort(bulkAllActuals);
+        
         for(int i = 0; i < numBeans; i++)
         {
             SampleBean saved = beans.get(i);

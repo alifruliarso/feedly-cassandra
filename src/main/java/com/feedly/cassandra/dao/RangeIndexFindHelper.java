@@ -87,6 +87,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
 
 
     private List<IndexedValue<V>> filterValues(RangeIndexQueryResult<K> queryResult, 
+                                               List<K> orderedKeys,
                                                List<V> values, 
                                                IValueFilter<V> filter, 
                                                IndexMetadata index,
@@ -95,12 +96,11 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
         List<StaleIndexValue> filtered = null;
         List<IndexedValue<V>> rv = new ArrayList<IndexedValue<V>>();
         int excludedCnt = 0;
-        List<K> keys = queryResult.getCurrentKeys();
         Map<K, List<StaleIndexValue>> staleValues = queryResult.getCurrentValues();
 
         for(int i = values.size() - 1; i >= 0; i--)
         {
-            K key = keys.get(i);
+            K key = orderedKeys.get(i);
             V value = values.get(i);
             
             for(StaleIndexValue staleValue : staleValues.get(key))
@@ -110,6 +110,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
                     if(filtered == null)
                         filtered = new ArrayList<StaleIndexValue>();
                     
+                    _logger.trace("{} no value found", key);
                     filtered.add(staleValue);
                 }
                 else
@@ -122,7 +123,10 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
                     EFilterResult result = null;
                     
                     if(rowPropVals.size() != idxPropVals.size() - 1) //last value of index column is row key
+                    {
                         result = EFilterResult.FAIL_STALE;
+                        _logger.trace("{} index prop length mismatch {} != {} - 1", new Object[] {key, rowPropVals.size(), idxPropVals.size()});
+                    }
                     else
                     {
                         for(int j = rowPropVals.size() - 1; j >= 0; j--)
@@ -135,6 +139,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
                             if(!idxPropVal.equals(rowPropVals.get(j)))
                             {
                                 result = EFilterResult.FAIL_STALE;
+                                _logger.trace("{} index prop val mismatch {} != {}", new Object[] {key, idxPropVal, rowPropVals.get(j)});
                                 break;
                             }
                         }
@@ -494,9 +499,10 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
             }
         }
 
-        List<V> rows = _getHelper.mget(result.getCurrentKeys(), null, options);
+        List<K> currentKeys = new ArrayList<K>(result.getCurrentKeys());
+        List<V> rows = _getHelper.mget(currentKeys, null, options);
         
-        List<IndexedValue<V>> values = filterValues(result, rows, filter, index, level);
+        List<IndexedValue<V>> values = filterValues(result, currentKeys, rows, filter, index, level);
         rows.clear();
         
         if(!values.isEmpty())
