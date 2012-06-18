@@ -435,6 +435,9 @@ public class PersistenceManager implements IKeyspaceFactory
             newOpts.put(CompressionParameters.CHUNK_LENGTH_KB, String.valueOf(annotation.compressionChunkLength()));
             return newOpts;
         }
+
+        //in 1.1 do this instead of returning null
+        //            return Collections.singletonMap(CompressionParameters.SSTABLE_COMPRESSION, "");
         
         return null;
     }

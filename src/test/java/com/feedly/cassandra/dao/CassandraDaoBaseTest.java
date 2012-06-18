@@ -265,16 +265,16 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
 
         assertEquals(bean, dao.get(bean.getRowKey()));
 
-        Thread.sleep(4500);
+        Thread.sleep(7500);
 
         bean.setStrVal1(null);
         assertEquals(bean, dao.get(bean.getRowKey()));
 
-        Thread.sleep(4000);
+        Thread.sleep(5000);
         bean.setStrVal3(null);
         assertEquals(bean, dao.get(bean.getRowKey()));
 
-        Thread.sleep(3000);
+        Thread.sleep(5000);
         assertNull(dao.get(bean.getRowKey()));
     }
 
@@ -339,13 +339,13 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         map.getMapProp().put("key1", "val1");
         _mapDao.put(map);
         
-        Thread.sleep(1500);
+        Thread.sleep(2500);
         assertEquals(map, _mapDao.get(map.getRowkey()));
         map.setMapProp(Collections.<String, Object>singletonMap("key2", "val2"));
         _mapDao.put(map);
         
         
-        Thread.sleep(1500);
+        Thread.sleep(4000);
         map.getMapProp().remove("key1");
         assertEquals(map, _mapDao.get(map.getRowkey()));
     }
