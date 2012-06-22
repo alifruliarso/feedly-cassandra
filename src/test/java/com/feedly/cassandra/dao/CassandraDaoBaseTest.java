@@ -1832,7 +1832,22 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         
         idxTmpl = new IndexedBean();
         idxTmpl.setStrVal("strval");
-        idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl));
+        Collection<IndexedBean> actualColl = _indexedDao.mfind(idxTmpl);
+        idxActuals = new ArrayList<IndexedBean>();
+
+        for(IndexedBean b : actualColl) //test incremental iteration rather than all() method
+            idxActuals.add(b);
+            
+        Collections.sort(idxActuals);
+        assertBeansEqual(idxBeans, idxActuals);
+        for(IndexedBean idxBean : idxActuals)
+            assertTrue(((IEnhancedEntity) idxBean).getModifiedFields().isEmpty());
+
+        //ensure subsequent iteration also works
+        idxActuals.clear();
+        
+        for(IndexedBean b : actualColl)
+            idxActuals.add(b);
 
         Collections.sort(idxActuals);
         assertBeansEqual(idxBeans, idxActuals);

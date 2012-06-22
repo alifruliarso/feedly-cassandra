@@ -221,8 +221,8 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
             _parent = parent;
             _filter = filter;
             _index = index;
-            _current = first;
-            _currentIter = first.iterator();
+            _current = new ArrayList<V>(first);
+            _currentIter = _current.iterator();
             _next = _currentIter.next();
             _query = query;
             _nextStartKey = nextStartKey;
@@ -274,7 +274,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
                         SimplePropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
                         V last = _current.get(_current.size() - 1);
                         K lastKey = (K) invokeGetter(keyMeta, last);
-                        _current.clear();
+                        _current.clear(); 
                         _nextStartKey = fetchBatch(_query, _nextStartKey, _endCol, lastKey, _remRows, _current, _ranges, _level);
                         
                         int cnt = _current.size();
