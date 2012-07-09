@@ -952,6 +952,17 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
 
             assertTrue(((IEnhancedEntity) loaded).getModifiedFields().isEmpty());
         }
+        
+        GetAllOptions options = new GetAllOptions();
+        options.setMaxRows(150);
+        actual = new ArrayList<SampleBean>(_dao.mgetAll(options));
+        assertEquals(150, actual.size());
+        Set<Long> actualKeys = new HashSet<Long>();
+        for(SampleBean loaded : actual)
+        {
+            assertTrue(actualKeys.add(loaded.getRowKey()));
+            assertEquals(beans.get(loaded.getRowKey().intValue()), loaded);
+        }
     }
     
     @Test
@@ -1459,7 +1470,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         keys.add(-52345L);//non existent
         keys.add(2, -7234324324L);//non existent
         List<SampleBean> bulkActuals = _dao.mget(keys, null, new GetOptions(null, Collections.singleton("boolVal")));
-        List<SampleBean> bulkAllActuals = new ArrayList<SampleBean>(_dao.mgetAll(new GetOptions(null, Collections.singleton("boolVal"))));
+        List<SampleBean> bulkAllActuals = new ArrayList<SampleBean>(_dao.mgetAll(new GetAllOptions(null, Collections.singleton("boolVal"))));
 
         assertEquals(keys.size(), bulkActuals.size());
         assertNull(bulkActuals.remove(bulkActuals.size()-1));
@@ -1490,7 +1501,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             props.add("unmapped-" + j);
         
         bulkActuals = _dao.mget(keys, null, new GetOptions(props, null));
-        bulkAllActuals = new ArrayList<SampleBean>(_dao.mgetAll(new GetOptions(props, null)));
+        bulkAllActuals = new ArrayList<SampleBean>(_dao.mgetAll(new GetAllOptions(props, null)));
         Collections.sort(bulkActuals);
         Collections.sort(bulkAllActuals);
         assertEquals(numBeans, bulkActuals.size());
@@ -1564,7 +1575,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         }
         
         _dao.mput(beans);
-        List<SampleBean> bulkAllActuals = new ArrayList<SampleBean>(_dao.mgetAll(new GetOptions("c", "cv")));
+        List<SampleBean> bulkAllActuals = new ArrayList<SampleBean>(_dao.mgetAll(new GetAllOptions("c", "cv")));
         List<SampleBean> bulkActuals = _dao.mget(keys, null, new GetOptions("c", "cv"));
         List<SampleBean> actuals = new ArrayList<SampleBean>();
         List<SampleBean> expecteds = new ArrayList<SampleBean>();
@@ -1674,8 +1685,8 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             assertEquals(expected, bulkListActuals.get(i));
         }
 
-        List<ListBean> bulkListAllActuals = new ArrayList<ListBean>(_listDao.mgetAll(new GetOptions(new CollectionProperty("listProp", 25),  
-                                                                                                    new CollectionProperty("listProp", 175))));
+        List<ListBean> bulkListAllActuals = new ArrayList<ListBean>(_listDao.mgetAll(new GetAllOptions(new CollectionProperty("listProp", 25),  
+                                                                                                       new CollectionProperty("listProp", 175))));
         
         _listDao.mget(keys, bulkListActuals, new GetOptions(new CollectionProperty("listProp", 25),  new CollectionProperty("listProp", 175)));
         assertEquals(numBeans, bulkListActuals.size());
@@ -1736,7 +1747,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
          */
         String start = "key-100", end = "key-201";
         List<MapBean> bulkMapAllActuals = 
-                new ArrayList<MapBean>(_mapDao.mgetAll(new GetOptions(new CollectionProperty("mapProp", start), new CollectionProperty("mapProp", end))));
+                new ArrayList<MapBean>(_mapDao.mgetAll(new GetAllOptions(new CollectionProperty("mapProp", start), new CollectionProperty("mapProp", end))));
         bulkMapActuals = _mapDao.mget(keys, mapActuals, 
                                       new GetOptions(new CollectionProperty("mapProp", start), new CollectionProperty("mapProp", end)));
 

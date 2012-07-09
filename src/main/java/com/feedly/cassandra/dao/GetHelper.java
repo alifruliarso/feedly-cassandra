@@ -257,34 +257,6 @@ class GetHelper<K, V> extends LoadHelper<K, V>
             
             V rv = _next;
             
-            if(_currentIter.hasNext())
-                _next = _currentIter.next();
-            else if(_current.size() == 0) //minus one for key boundary overlap
-            {
-                _current = null;
-                _currentIter = null;
-                _next = null;
-            }
-            else //fetch next batch
-            {
-                do 
-                {
-                    _lastKeyOfBatch = fetch(_query, _lastKeyOfBatch, _options, _current);
-                } while(_lastKeyOfBatch != null && _current.isEmpty());
-                
-                if(_current.isEmpty())
-                {
-                    _current = null;
-                    _currentIter = null;
-                    _next = null;
-                }
-                else
-                {
-                    _currentIter = _current.iterator();
-                    _next = _currentIter.next();
-                }
-            }
-            
             _iteratedCnt++;
             
             if(_iteratedCnt == _options.getMaxRows())
@@ -292,6 +264,36 @@ class GetHelper<K, V> extends LoadHelper<K, V>
                 _current = null;
                 _currentIter = null;
                 _next = null;
+            }
+            else
+            {
+                if(_currentIter.hasNext())
+                    _next = _currentIter.next();
+                else if(_current.size() == 0) //minus one for key boundary overlap
+                {
+                    _current = null;
+                    _currentIter = null;
+                    _next = null;
+                }
+                else //fetch next batch
+                {
+                    do 
+                    {
+                        _lastKeyOfBatch = fetch(_query, _lastKeyOfBatch, _options, _current);
+                    } while(_lastKeyOfBatch != null && _current.isEmpty());
+                    
+                    if(_current.isEmpty())
+                    {
+                        _current = null;
+                        _currentIter = null;
+                        _next = null;
+                    }
+                    else
+                    {
+                        _currentIter = _current.iterator();
+                        _next = _currentIter.next();
+                    }
+                }
             }
             
             if(_next == null)
