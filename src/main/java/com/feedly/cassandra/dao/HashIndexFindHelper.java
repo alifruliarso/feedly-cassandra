@@ -221,6 +221,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
             _parent = parent;
             _filter = filter;
             _index = index;
+            
             _current = new ArrayList<V>(first);
             _currentIter = _current.iterator();
             _next = _currentIter.next();

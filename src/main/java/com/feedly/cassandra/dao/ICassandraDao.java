@@ -83,7 +83,7 @@ public interface ICassandraDao<K, V>
      * @param options the get options.
      * @return the entities.
      */
-    public Collection<V> mgetAll(GetOptions options);
+    public Collection<V> mgetAll(GetAllOptions options);
 
 
     /**

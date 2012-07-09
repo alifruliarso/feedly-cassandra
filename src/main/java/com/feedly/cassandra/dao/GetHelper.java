@@ -101,7 +101,7 @@ class GetHelper<K, V> extends LoadHelper<K, V>
         throw new IllegalStateException(); //never happens
     }
     
-    public Collection<V> mgetAll(GetOptions options)
+    public Collection<V> mgetAll(GetAllOptions options)
     {
         return new LazyLoadedCollection(options);
     }
@@ -223,7 +223,7 @@ class GetHelper<K, V> extends LoadHelper<K, V>
         private byte[] _lastKeyOfBatch;
         private V _next;
         private int _iteratedCnt = 0;
-        private final GetOptions _options;
+        private final GetAllOptions _options;
         RangeSlicesQuery<byte[], byte[], byte[]> _query;
         private final LazyLoadedCollection _parent;
         
@@ -231,7 +231,7 @@ class GetHelper<K, V> extends LoadHelper<K, V>
                                   List<V> first,
                                   byte[] lastKeyOfBatch,
                                   RangeSlicesQuery<byte[], byte[], byte[]> query,
-                                  GetOptions options)
+                                  GetAllOptions options)
         {
             _parent = parent;
             _current = new ArrayList<V>(first);
@@ -286,6 +286,14 @@ class GetHelper<K, V> extends LoadHelper<K, V>
             }
             
             _iteratedCnt++;
+            
+            if(_iteratedCnt == _options.getMaxRows())
+            {
+                _current = null;
+                _currentIter = null;
+                _next = null;
+            }
+            
             if(_next == null)
                 _parent.setSize(_iteratedCnt); //we have a row count, notify parent so subsequent calls to size() don't have to fetch all rows
             
@@ -302,12 +310,13 @@ class GetHelper<K, V> extends LoadHelper<K, V>
     private class LazyLoadedCollection extends AbstractCollection<V>
     {
         RangeSlicesQuery<byte[], byte[], byte[]> _query;
-        private GetOptions _options;
+        private GetAllOptions _options;
         private List<V> _all = null; //if it is known all rows have been fetched, this field is set
         private List<V> _first = new ArrayList<V>();
         private byte[] _lastKeyOfBatch; //last key of the _first rows
         private int _size = -1;
-        public LazyLoadedCollection(GetOptions options)
+        
+        public LazyLoadedCollection(GetAllOptions options)
         {
             _query = HFactory.createRangeSlicesQuery(_keyspaceFactory.createKeyspace(options.getConsistencyLevel()), SER_BYTES, SER_BYTES, SER_BYTES);
             _query.setColumnFamily(_entityMeta.getFamilyName());
@@ -336,7 +345,7 @@ class GetHelper<K, V> extends LoadHelper<K, V>
             {
                 Iterator<V> iter = iterator();
                 _all = new ArrayList<V>();
-                while(iter.hasNext())
+                while(iter.hasNext() && _all.size() < _options.getMaxRows())
                     _all.add(iter.next());
             }
             

@@ -256,10 +256,10 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     }
 
     @Override
-    public Collection<V> mgetAll(GetOptions options)
+    public Collection<V> mgetAll(GetAllOptions options)
     {
         if(options == null)
-            options = new GetOptions();
+            options = new GetAllOptions();
         
         return _getHelper.mgetAll(options);
     }
