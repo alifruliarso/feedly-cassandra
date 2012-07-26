@@ -9,7 +9,7 @@ import java.util.List;
 public class ListPropertyMetadata extends PropertyMetadataBase
 {
     private final PropertyMetadataBase _elementPropertyMetadata;
-
+    
     public ListPropertyMetadata(String name,
                                 Type type,
                                 Annotation[] annotations,
@@ -37,5 +37,15 @@ public class ListPropertyMetadata extends PropertyMetadataBase
     public PropertyMetadataBase getElementPropertyMetadata()
     {
         return _elementPropertyMetadata;
+    }
+    
+    public boolean hasCounter()
+    {
+        return _elementPropertyMetadata.hasCounter();
+    }
+
+    public boolean hasSimple()
+    {
+        return _elementPropertyMetadata.hasSimple();
     }
 }

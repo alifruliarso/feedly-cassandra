@@ -13,12 +13,18 @@ import me.prettyprint.cassandra.serializers.BigIntegerSerializer;
 import me.prettyprint.hector.api.Serializer;
 import me.prettyprint.hector.api.beans.AbstractComposite.ComponentEquality;
 import me.prettyprint.hector.api.beans.ColumnSlice;
+import me.prettyprint.hector.api.beans.CounterRow;
+import me.prettyprint.hector.api.beans.CounterRows;
+import me.prettyprint.hector.api.beans.CounterSlice;
 import me.prettyprint.hector.api.beans.DynamicComposite;
 import me.prettyprint.hector.api.beans.HColumn;
+import me.prettyprint.hector.api.beans.HCounterColumn;
 import me.prettyprint.hector.api.beans.Row;
 import me.prettyprint.hector.api.beans.Rows;
 import me.prettyprint.hector.api.factory.HFactory;
+import me.prettyprint.hector.api.query.MultigetSliceCounterQuery;
 import me.prettyprint.hector.api.query.MultigetSliceQuery;
+import me.prettyprint.hector.api.query.SliceCounterQuery;
 import me.prettyprint.hector.api.query.SliceQuery;
 
 import com.feedly.cassandra.EConsistencyLevel;
@@ -121,13 +127,68 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
         return value;
     }
 
+    /**
+     * load properties into an entity from a cassandra row's columns
+     * @param key the row key
+     * @param value an existing entity to update, if null is passed a new entity is created
+     * @param keyMeta the key meta
+     * @param columns the columns used for update
+     * @return the entity
+     */
+    protected V loadCounterValueProperties(K key, V value, SimplePropertyMetadata keyMeta, List<HCounterColumn<byte[]>> columns)
+    {
+        if(columns.isEmpty())
+            return value;
+        
+        try
+        {
+            if(value == null)
+                value = _entityMeta.getType().newInstance();
+        }
+        catch(Exception ex)
+        {
+            throw new IllegalArgumentException("error instantiating value object of type " + _entityMeta.getClass(), ex);
+        }
+        
+        Map<String, Object> containers = null; //cache the containers to avoid reflection invocations in loop
+        if(_entityMeta.useCompositeColumns())
+            containers = new HashMap<String,Object>();
+
+        int size = columns.size();
+        
+        StringBuilder descriptor = null;
+        if(_logger.isTraceEnabled())
+        {
+            descriptor = new StringBuilder();
+            descriptor.append(_entityMeta.getType().getSimpleName());
+            descriptor.append("[").append(key).append("]");
+        }
+        
+        Set<Object> entities = new HashSet<Object>();
+        for(int i = 0; i < size; i++)
+        {
+            HCounterColumn<byte[]> col = columns.get(i);
+            Object colName= _entityMeta.useCompositeColumns() ? SER_COMPOSITE.fromBytes(col.getName()) : SER_STRING.fromBytes(col.getName());
+            
+            loadValueProperty(descriptor, value, _entityMeta, 0, colName, col.getValue(), entities, null, containers);
+        }
+        
+        invokeSetter(keyMeta, value, key);
+        
+        entities.add(value);
+        resetEntities(entities);
+        
+        
+        return value;
+    }
+    
     @SuppressWarnings("unchecked")
     private void loadValueProperty(StringBuilder descriptor,
                                    Object value,
                                    EntityMetadataBase<?> entityMeta,
                                    int colNameIdx,
                                    Object colName,
-                                   byte[] colVal, 
+                                   Object colVal, 
                                    Set<Object> entities, 
                                    Map<String, Object> unmapped, 
                                    Map<String, Object> containers)
@@ -154,7 +215,7 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
                     invokeSetter(entityMeta.getUnmappedHandler(), value, unmapped);
                 }
                 
-                loadUnmappedProperty(descriptor, entityMeta.getUnmappedHandler(), value, pname, colVal, unmapped);
+                loadUnmappedProperty(descriptor, entityMeta.getUnmappedHandler(), value, pname, (byte[]) colVal, unmapped);
             }
             else
                 _logger.info("unmapped value for {}.{}, skipping", descriptor, pname);
@@ -246,7 +307,7 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
     @SuppressWarnings("unchecked")
     private void loadMapProperty(StringBuilder descriptor, 
                                  DynamicComposite colName,
-                                 byte[] colValue,
+                                 Object colValue,
                                  Map<Object, Object> map,
                                  int colIdx,
                                  MapPropertyMetadata pm,
@@ -264,7 +325,13 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
         EPropertyType t = valueMeta.getPropertyType();
         if(t == EPropertyType.SIMPLE)
         {
-            Object pval = ((SimplePropertyMetadata) valueMeta).getSerializer().fromBytes(colValue);
+            SimplePropertyMetadata spm = (SimplePropertyMetadata) valueMeta;
+            Object pval;
+            
+            if(spm.hasCounter())
+                pval = new CounterColumn((Long) colValue, null);
+            else
+                pval = ((SimplePropertyMetadata) valueMeta).getSerializer().fromBytes((byte[]) colValue);
 
             _logger.trace("{} = {}", descriptor, pval);
             map.put(key, pval); 
@@ -318,7 +385,7 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
     @SuppressWarnings("unchecked")
     private void loadListProperty(StringBuilder descriptor,
                                   DynamicComposite colName,
-                                  byte[] colValue,
+                                  Object colValue,
                                   List<Object> list,
                                   int colIdx,
                                   ListPropertyMetadata pm,
@@ -337,7 +404,13 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
 
         if(t == EPropertyType.SIMPLE)
         {
-            Object pval = ((SimplePropertyMetadata) elementMeta).getSerializer().fromBytes(colValue);
+            SimplePropertyMetadata spm = (SimplePropertyMetadata) elementMeta;
+            Object pval;
+            
+            if(spm.hasCounter())
+                pval = new CounterColumn((Long) colValue, null);
+            else
+                pval = ((SimplePropertyMetadata) elementMeta).getSerializer().fromBytes((byte[]) colValue);
 
             _logger.trace("{} = {}", descriptor, pval);
             list.add(pval); 
@@ -413,11 +486,19 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
 
     }
 
-    private void loadSimpleProperty(StringBuilder descriptor, Object value, byte[] colVal, String pname, SimplePropertyMetadata pm)
+    private void loadSimpleProperty(StringBuilder descriptor, Object value, Object colVal, String pname, SimplePropertyMetadata pm)
     {
-        Object pval = pm.getSerializer().fromBytes(colVal);
-        invokeSetter(pm, value, pval);
-        _logger.trace("{}.{} = {}", new Object[]{descriptor, pname, pval});
+        if(pm.hasCounter())
+        {
+            invokeSetter(pm, value, new CounterColumn((Long) colVal, null));
+            _logger.trace("{}.{} = {}", new Object[]{descriptor, pname, value});
+        }
+        else
+        {
+            Object pval = pm.getSerializer().fromBytes((byte[]) colVal);
+            invokeSetter(pm, value, pval);
+            _logger.trace("{}.{} = {}", new Object[]{descriptor, pname, pval});
+        }
     }
 
     private void loadUnmappedProperty(StringBuilder descriptor,
@@ -459,10 +540,10 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
      * @return the updated entity
      */
     protected V fromColumnSlice(K key, V value, 
-                              SimplePropertyMetadata keyMeta, byte[] keyBytes, 
-                              SliceQuery<byte[], byte[], byte[]> query, ColumnSlice<byte[], byte[]> slice,
-                              byte[] rangeEnd,
-                              EConsistencyLevel level)
+                                SimplePropertyMetadata keyMeta, byte[] keyBytes, 
+                                SliceQuery<byte[], byte[], byte[]> query, ColumnSlice<byte[], byte[]> slice,
+                                byte[] rangeEnd,
+                                EConsistencyLevel level)
     {
         List<HColumn<byte[], byte[]>> columns = slice.getColumns();
         byte[] firstCol = null;
@@ -478,6 +559,48 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
                 if(query == null)
                     query = buildSliceQuery(keyBytes, level);
 
+                firstCol = columns.get(columns.size() - 1).getName();
+                
+                query.setRange(firstCol, rangeEnd, false, CassandraDaoBase.COL_RANGE_SIZE);
+                columns = query.execute().get().getColumns();
+                
+                columns = columns.subList(1, columns.size()); //boundaries are inclusive, exclude previously processed column
+            }
+        }
+        return value;
+    }
+    
+    /**
+     * build value from set of counter columns, properly fetching additional columns if there are more columns than the range size.
+     * @param key the row key
+     * @param value the value to update, if null is passed a new value is created
+     * @param keyMeta 
+     * @param keyBytes should match key param
+     * @param query the query to use to get more columns
+     * @param slice an already fetched slice
+     * @param rangeEnd the last column to fetch
+     * @return the updated entity
+     */
+    protected V fromCounterColumnSlice(K key, V value, 
+                                       SimplePropertyMetadata keyMeta, byte[] keyBytes, 
+                                       SliceCounterQuery<byte[], byte[]> query, CounterSlice<byte[]> slice,
+                                       byte[] rangeEnd,
+                                       EConsistencyLevel level)
+    {
+        List<HCounterColumn<byte[]>> columns = slice.getColumns();
+        byte[] firstCol = null;
+        boolean hasMore = true;
+        while(hasMore)
+        {
+            value = loadCounterValueProperties(key, value, keyMeta, columns);
+            
+            hasMore = columns.size() >= CassandraDaoBase.COL_RANGE_SIZE - 1; 
+            
+            if(hasMore) //need to fetch more
+            {
+                if(query == null)
+                    query = buildSliceCounterQuery(keyBytes, level);
+                
                 firstCol = columns.get(columns.size() - 1).getName();
                 
                 query.setRange(firstCol, rangeEnd, false, CassandraDaoBase.COL_RANGE_SIZE);
@@ -528,17 +651,21 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
     /**
      * Determine the columns to include based on includes and excludes
      * @param colNames a list to be updated with all the simple property column names to be included
+     * @param colNames a list to be updated with all the counter column names to be included
      * @param includes the columns to include
      * @param excludes the columns to exclude
      * @return the collection properties included
      */
-    protected List<CollectionRange> derivePartialColumns(List<byte[]> colNames, Set<? extends Object> includes, Set<String> excludes)
+    protected List<CollectionRange> derivePartialColumns(List<byte[]> colNames, List<byte[]> counterColNames, Set<? extends Object> includes, Set<String> excludes)
     {
         List<CollectionRange> ranges = null;
         Set<? extends Object> partialProperties = partialProperties(includes, excludes);
         for(Object property : partialProperties)
         {
             byte[] colNameBytes = null;
+            boolean isCounter = false;
+            boolean isSimple = false;
+            
             if(property instanceof String)
             {
                 String strProp = (String) property;
@@ -555,7 +682,10 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
                     ranges.add(new CollectionRange(pm));
                     continue; 
                 }
+                
                 colNameBytes = pm != null ? pm.getPhysicalNameBytes() : serialize(property, true, null);
+                isCounter = pm != null && pm.hasCounter();
+                isSimple = !isCounter;
             }
             else
             {
@@ -582,6 +712,8 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
                     }
                     
                     colNameBytes = collectionPropertyName(cp, ComponentEquality.EQUAL);
+                    isCounter = pm.hasCounter();
+                    isSimple = pm.hasSimple();
                 }
                 else if(_entityMeta.getUnmappedHandler() == null)
                     throw new IllegalArgumentException("property must be string, but encountered " + property);
@@ -592,7 +724,10 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
             if(colNameBytes == null)
                 throw new IllegalArgumentException("could not serialize " + property);
             
-            colNames.add(colNameBytes);
+            if(isSimple)
+                colNames.add(colNameBytes);
+            if(isCounter)
+                counterColNames.add(colNameBytes);
         }        
         
         return ranges;
@@ -688,6 +823,94 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
         return values;
     }
 
+    /**
+     * bulk load counter values using a multi get slice query
+     * @param keys the keys to fetch
+     * @param values the values to update, if null a new list will be created
+     * @param colNames the column names to fetch
+     * @param first the first column (either colNames or first/last should be set)
+     * @param last the last column
+     * @param maintainOrder ensure the value list matches the key list by index
+     * @return the updated values
+     */
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    protected List<V> bulkLoadFromMultiCounterGet(Collection<K> keys, List<V> values, List<byte[]> colNames, byte[] first, byte[] last, boolean maintainOrder, EConsistencyLevel level)
+    {
+        if(!(keys instanceof Set))
+        {
+            if(new HashSet<K>(keys).size() != keys.size()) //perhaps wasteful but duplicate keys being passed can cause lots of nasty problems...
+                throw new IllegalArgumentException("duplicate keys exist");
+        }
+        
+        SimplePropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
+        MultigetSliceCounterQuery<byte[], byte[]> query = HFactory.createMultigetSliceCounterQuery(_keyspaceFactory.createKeyspace(level),
+                                                                                                   SER_BYTES,
+                                                                                                   SER_BYTES);
+        
+        byte[][] keyBytes = new byte[keys.size()][];
+        
+        int i = 0;
+        for(K key : keys)
+        {
+            _logger.debug("loading {}[{}]", _entityMeta.getFamilyName(), key);
+            
+            keyBytes[i] = ((Serializer) _entityMeta.getKeyMetadata().getSerializer()).toBytes(key);
+            i++;
+        }
+        
+        query.setKeys(keyBytes);
+        query.setColumnFamily(_entityMeta.getCounterFamilyName());
+        
+        if(colNames != null)
+            query.setColumnNames(colNames.toArray(new byte[colNames.size()][]));
+        else
+            query.setRange(first, last, false, CassandraDaoBase.COL_RANGE_SIZE);
+        
+        CounterRows<byte[], byte[]> rows = query.execute().get();
+        
+        Map<K, Integer> pos = null;
+        
+        if(maintainOrder)
+        {
+            pos = new HashMap<K, Integer>();
+            for(i = keys.size() - 1; i >= 0; i--)
+                pos.put( ((List<K>)keys).get(i), i);
+            
+        }
+        
+        values = values == null ? new ArrayList<V>(keys.size()) : values;
+        
+        for(CounterRow<byte[], byte[]> row : rows)
+        {
+            K key = (K) ((Serializer) keyMeta.getSerializer()).fromBytes(row.getKey());
+            
+            V value = null;
+            
+            int idx = 0;
+            if(maintainOrder)
+            {
+                idx = pos.get(key);
+                
+                for(i = values.size(); i <= idx; i++)
+                    values.add(null);
+                
+                value = values.get(pos.get(key));
+            }
+            
+            value = fromCounterColumnSlice(key, value, keyMeta, row.getKey(), null, row.getColumnSlice(), last, level);
+            
+            if(value != null)
+            {
+                if(maintainOrder)
+                    values.set(idx, value);
+                else 
+                    values.add(value);
+            }
+        }
+        
+        return values;
+    }
+    
     
     /**
      * fetch all the values for a collection property and update entities. 
@@ -701,7 +924,13 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
         if(ranges != null)
         {
             for(CollectionRange r : ranges)
-                values = bulkLoadFromMultiGet(keys, values, null, r.startBytes(), r.endBytes(), true, level);
+            {
+                if(r.propertyMetadata().hasSimple())
+                    values = bulkLoadFromMultiGet(keys, values, null, r.startBytes(), r.endBytes(), true, level);
+
+                if(r.propertyMetadata().hasCounter())
+                    values = bulkLoadFromMultiCounterGet(keys, values, null, r.startBytes(), r.endBytes(), true, level);
+            }
         }
 
         return values;
@@ -719,6 +948,21 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
         query.setKey(keyBytes);
         query.setColumnFamily(_entityMeta.getFamilyName());
 
+        return query;
+    }
+
+    /**
+     * basic factory method to create a slice counter query based on the associated column family. 
+     * @param keyBytes
+     * @return
+     */
+    protected SliceCounterQuery<byte[], byte[]> buildSliceCounterQuery(byte[] keyBytes, EConsistencyLevel level)
+    {
+        SliceCounterQuery<byte[], byte[]> query = HFactory.createCounterSliceQuery(_keyspaceFactory.createKeyspace(level), SER_BYTES, SER_BYTES);
+        
+        query.setKey(keyBytes);
+        query.setColumnFamily(_entityMeta.getCounterFamilyName());
+        
         return query;
     }
 }

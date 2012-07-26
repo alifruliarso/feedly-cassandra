@@ -6,6 +6,8 @@ import java.lang.reflect.Modifier;
 
 import me.prettyprint.hector.api.Serializer;
 
+import com.feedly.cassandra.dao.CounterColumn;
+
 /**
  * Holds metadata for a primitive or enum entity property (column family column)
  * 
@@ -14,7 +16,8 @@ import me.prettyprint.hector.api.Serializer;
 public class SimplePropertyMetadata extends PropertyMetadataBase
 {
     private final Serializer<?> _serializer;
-
+    private final boolean _isCounter;
+    
     @SuppressWarnings("unchecked")
     public SimplePropertyMetadata(String name,
                                   Class<?> fieldClass,
@@ -24,9 +27,11 @@ public class SimplePropertyMetadata extends PropertyMetadataBase
                                   Method getter,
                                   Method setter,
                                   Class<? extends Serializer<?>> serializerClass,
-                                          boolean useCompositeKeySerializer)
+                                  boolean useCompositeKeySerializer)
     {
         super(name, fieldClass, annotations, physicalName, ttl, getter, setter, useCompositeKeySerializer, EPropertyType.SIMPLE);
+
+        _isCounter = fieldClass.equals(CounterColumn.class);
 
         if(serializerClass != null)
             _serializer = getSerializerInstance(serializerClass);
@@ -39,7 +44,7 @@ public class SimplePropertyMetadata extends PropertyMetadataBase
         else
             _serializer = EntityUtils.getSerializer(fieldClass);
 
-        if(_serializer == null)
+        if(_serializer == null && !_isCounter)
         {
             throw new IllegalArgumentException(name + ": invalid type. cannot serialize " + fieldClass.getName());
         }
@@ -81,6 +86,16 @@ public class SimplePropertyMetadata extends PropertyMetadataBase
     public Serializer<?> getSerializer()
     {
         return _serializer;
+    }
+
+    public boolean hasCounter()
+    {
+        return _isCounter;
+    }
+
+    public boolean hasSimple()
+    {
+        return !_isCounter;
     }
 
 }

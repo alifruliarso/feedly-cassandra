@@ -250,8 +250,8 @@ public class PersistenceManager implements IKeyspaceFactory
                 }
             }
             
-            syncRangeIndexTables(meta, !rangeIndexed.isEmpty(), keyspaceDef);
-            
+            syncRangeIndexFamilies(meta, !rangeIndexed.isEmpty(), keyspaceDef);
+            syncCounterFamily(meta, keyspaceDef);
             cfDef.setCompressionOptions(compressionOptions(annotation));
             _logger.info("{}: compression options: {}, hash indexed columns: {}, range indexed columns", 
                          new Object[] {familyName, cfDef.getCompressionOptions(), hashIndexed, rangeIndexed});
@@ -310,8 +310,9 @@ public class PersistenceManager implements IKeyspaceFactory
                 }
             }
 
-            syncRangeIndexTables(meta, hasRangeIndexes, keyspaceDef);
-            
+            syncRangeIndexFamilies(meta, hasRangeIndexes, keyspaceDef);
+            syncCounterFamily(meta, keyspaceDef);
+
             for(SimplePropertyMetadata pm : hashIndexedProps)
             {
                 existing.addColumnDefinition(createColDef(meta, familyName, pm));
@@ -348,7 +349,34 @@ public class PersistenceManager implements IKeyspaceFactory
         }
     }
 
-    private void syncRangeIndexTables(EntityMetadata<?> meta, boolean hasRangeIndexes, KeyspaceDefinition keyspaceDef)
+    private void syncCounterFamily(EntityMetadata<?> meta, KeyspaceDefinition keyspaceDef)
+    {
+        boolean exists = false;
+        for(ColumnFamilyDefinition existing : keyspaceDef.getCfDefs())
+        {
+            if(existing.getName().equals(meta.getCounterFamilyName()))
+            {
+                exists = true;
+                break;
+            }
+        }
+        
+        if(exists && !meta.hasCounterColumns())
+        {
+            _logger.warn("{}: does not have counter columns but 'counter' column family {} exists. manual drop may be safely done.", 
+                         meta.getFamilyName(), meta.getCounterFamilyName());
+        }
+        else if(!exists && meta.hasCounterColumns())
+        {
+            _logger.info("{}: has counters - create 'counter' column family {}", meta.getFamilyName(), meta.getCounterFamilyName());
+            ColumnFamilyDefinition cfDef = new BasicColumnFamilyDefinition(HFactory.createColumnFamilyDefinition(_keyspace, meta.getCounterFamilyName()));
+            cfDef.setDefaultValidationClass(ComparatorType.COUNTERTYPE.getTypeName());
+            addCompressionOptions(cfDef);
+            _cluster.addColumnFamily(cfDef, true);
+        }
+    }
+
+    private void syncRangeIndexFamilies(EntityMetadata<?> meta, boolean hasRangeIndexes, KeyspaceDefinition keyspaceDef)
     {
         boolean walExists = false, idxExists = false, revIdxExists = false;
         for(ColumnFamilyDefinition existing : keyspaceDef.getCfDefs())
@@ -366,10 +394,10 @@ public class PersistenceManager implements IKeyspaceFactory
         if(!hasRangeIndexes)
         {
             if(walExists)
-                _logger.warn("{}: does not have range indexes but 'write ahead log' table {} exists. manual drop may be safely done.", 
+                _logger.warn("{}: does not have range indexes but 'write ahead log' column family {} exists. manual drop may be safely done.", 
                              meta.getFamilyName(), meta.getWalFamilyName());
             if(idxExists)
-                _logger.warn("{}: does not have range indexes but 'index' table {} exists. manual drop may be safely done.", 
+                _logger.warn("{}: does not have range indexes but 'index' column family {} exists. manual drop may be safely done.", 
                              meta.getFamilyName(), meta.getIndexFamilyName());
         }
         
@@ -380,7 +408,7 @@ public class PersistenceManager implements IKeyspaceFactory
             if(!walExists)
             {
                 ColumnFamilyDefinition cfDef = new BasicColumnFamilyDefinition(HFactory.createColumnFamilyDefinition(_keyspace, meta.getWalFamilyName()));
-                _logger.info("{}: has range indexes - create 'write ahead log' table {}", meta.getFamilyName(), meta.getWalFamilyName());
+                _logger.info("{}: has range indexes - create 'write ahead log' column family {}", meta.getFamilyName(), meta.getWalFamilyName());
                 cfDef.setComparatorType(ComparatorType.UTF8TYPE);
                 addCompressionOptions(cfDef);
                 _cluster.addColumnFamily(cfDef, true);
@@ -388,7 +416,7 @@ public class PersistenceManager implements IKeyspaceFactory
             if(!idxExists)
             {
                 ColumnFamilyDefinition cfDef = new BasicColumnFamilyDefinition(HFactory.createColumnFamilyDefinition(_keyspace, meta.getIndexFamilyName()));
-                _logger.info("{}: has range indexes - create 'index' table {}", meta.getFamilyName(), meta.getIndexFamilyName());
+                _logger.info("{}: has range indexes - create 'index' column family {}", meta.getFamilyName(), meta.getIndexFamilyName());
                 cfDef.setComparatorType(ComparatorType.DYNAMICCOMPOSITETYPE);
                 cfDef.setComparatorTypeAlias(DynamicComposite.DEFAULT_DYNAMIC_COMPOSITE_ALIASES);
                 addCompressionOptions(cfDef);

@@ -22,25 +22,30 @@ import org.junit.Test;
 import com.feedly.cassandra.anno.Column;
 import com.feedly.cassandra.anno.ColumnFamily;
 import com.feedly.cassandra.anno.RowKey;
+import com.feedly.cassandra.dao.CounterColumn;
 
 public class PropertyMetadataFactoryTest
 {
     @Test
     public void testMetadata() throws SecurityException, NoSuchFieldException
     {
-        for(Class<?> c : SampleEntity.class.getInterfaces())
-            System.out.println(c.getName());
-        
-        int idx = 8;
+        int idx = 12;
         EntityMetadata<SampleEntity> meta = new EntityMetadata<SampleEntity>(SampleEntity.class);
         assertEquals(idx--, meta.getProperties().size());
         
         /*
-         * strProp
+         * counter prop
          */
         SimplePropertyMetadata simpleMeta = (SimplePropertyMetadata) meta.getProperties().get(idx--);
+        assertSimpleProperty(simpleMeta, "theCounter", CounterColumn.class, null);
+
+        /*
+         * strProp
+         */
+        simpleMeta = (SimplePropertyMetadata) meta.getProperties().get(idx--);
         assertSimpleProperty(simpleMeta, "strProp", String.class, StringSerializer.get());
 
+        
         /*
          * mapOfMaps
          */
@@ -95,11 +100,34 @@ public class PropertyMetadataFactoryTest
         assertSimpleProperty(valueMeta, "", String.class, StringSerializer.get());
         
         /*
-         * embedded
+         * embedded counter
          */
         ObjectPropertyMetadata objMeta = (ObjectPropertyMetadata) meta.getProperties().get(idx--);
+        assertEquals(1, objMeta.getObjectMetadata().getProperties().size());
+        assertTrue(objMeta.hasCounter());
+
+        /*
+         * embedded
+         */
+        objMeta = (ObjectPropertyMetadata) meta.getProperties().get(idx--);
         assertEmbeddedMeta("embedded", objMeta);
         
+        /*
+         * counterMap
+         */
+        mapMeta = (MapPropertyMetadata) meta.getProperties().get(idx--);
+        assertEquals("counterMap", mapMeta.getName());
+        assertEquals(SortedMap.class, mapMeta.getFieldType());
+        assertTrue(mapMeta.hasCounter());
+
+        /*
+         * counterList
+         */
+        listMeta = (ListPropertyMetadata) meta.getProperties().get(idx--);
+        assertEquals("counterList", listMeta.getName());
+        assertEquals(List.class, listMeta.getFieldType());
+        assertTrue(listMeta.hasCounter());
+
         /*
          * beanMap
          */
@@ -128,7 +156,8 @@ public class PropertyMetadataFactoryTest
     {
         assertEquals(name, meta.getName());
         assertEquals(EmbeddedBean.class, meta.getFieldType());
-
+        assertFalse(meta.hasCounter());
+        
         /*
          * boolVal
          * charVal
@@ -173,6 +202,9 @@ public class PropertyMetadataFactoryTest
         
         @Column
         private EmbeddedBean embedded;
+
+        @Column
+        private EmbeddedCounterBean embeddedCounter;
         
         @Column
         private String strProp;
@@ -187,6 +219,9 @@ public class PropertyMetadataFactoryTest
         private List<EmbeddedBean> beanList; 
 
         @Column
+        private List<CounterColumn> counterList; 
+
+        @Column
         private Map<String, Double> map; 
 
         @Column
@@ -194,6 +229,12 @@ public class PropertyMetadataFactoryTest
         
         @Column
         private SortedMap<String, EmbeddedBean> beanMap;
+
+        @Column
+        private SortedMap<String, CounterColumn> counterMap;
+
+        @Column
+        private CounterColumn theCounter;
 
         public long getRowKey()
         {
@@ -285,5 +326,44 @@ public class PropertyMetadataFactoryTest
             this.mapOfMaps = mapOfMaps;
         }
 
+        public CounterColumn getTheCounter()
+        {
+            return theCounter;
+        }
+
+        public void setTheCounter(CounterColumn theCounter)
+        {
+            this.theCounter = theCounter;
+        }
+
+        public EmbeddedCounterBean getEmbeddedCounter()
+        {
+            return embeddedCounter;
+        }
+
+        public void setEmbeddedCounter(EmbeddedCounterBean embeddedCounterBean)
+        {
+            this.embeddedCounter = embeddedCounterBean;
+        }
+
+        public SortedMap<String, CounterColumn> getCounterMap()
+        {
+            return counterMap;
+        }
+
+        public void setCounterMap(SortedMap<String, CounterColumn> counterMap)
+        {
+            this.counterMap = counterMap;
+        }
+
+        public List<CounterColumn> getCounterList()
+        {
+            return counterList;
+        }
+
+        public void setCounterList(List<CounterColumn> counterList)
+        {
+            this.counterList = counterList;
+        }
     }
 }

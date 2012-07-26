@@ -52,4 +52,16 @@ public class ObjectPropertyMetadata extends PropertyMetadataBase
             throw new RuntimeException(ex);
         }
     }
+
+    @Override
+    public boolean hasCounter()
+    {
+        return _objectMetadata.hasCounterColumns();
+    }
+
+    @Override
+    public boolean hasSimple()
+    {
+        return _objectMetadata.hasNormalColumns();
+    }
 }

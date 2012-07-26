@@ -16,6 +16,8 @@ import java.util.UUID;
 
 import me.prettyprint.hector.api.Serializer;
 
+import com.feedly.cassandra.dao.CounterColumn;
+
 public class PropertyMetadataFactory
 {
     public static final Set<Class<?>> PRIMITIVES;
@@ -102,7 +104,7 @@ public class PropertyMetadataFactory
         if(type instanceof Class)
         {
             Class<?> clazz = (Class<?>) type;
-            if(isSimpleType(clazz))
+            if(isSimpleType(clazz) || clazz.equals(CounterColumn.class))
                 return new SimplePropertyMetadata(name, clazz, annotations, physicalName, ttl, getter, setter, serializerClass, useCompositeKeySerializer);
             else 
             {

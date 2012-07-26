@@ -39,6 +39,9 @@ public @interface Column
     /**
      * Should this column be hashed indexed? Hash indexes provide unique lookup capability but not range searches. If range searches are
      * not required, using a hash index is preferacble as native cassandra secondary indexes may be used.
+     * <p>
+     * counter columns may not be indexed.
+     * 
      * @return true if the column should be hash indexed
      */
     public boolean hashIndexed() default false;
@@ -47,6 +50,8 @@ public @interface Column
      * Should this column be range indexed? Range indexes provide the ability to do range lookups as opposed to hash indexes which only allow
      * exact value lookups. The downside of range indexes is write performance is significantly worse as custom built indexes must be used,
      * resulting in multiple cassandra operations per save. 
+     * <p>
+     * counter columns may not be indexed.
      * 
      * @return true if the column should be range indexed
      */
@@ -66,7 +71,8 @@ public @interface Column
      * The time to live for this column. For collections, the time to live applies to each entry in the collection, not the entire collection
      * itself. TTL values for collections and embedded properties override any TTL values specified in the embedded objects. The granularity 
      * and minimum interval for TTLs is 1 second.
-     * 
+     * <p>
+     * ttls can not be specified for counter columns.
      * @return the time to live duration
      */
     public int ttl() default -1;

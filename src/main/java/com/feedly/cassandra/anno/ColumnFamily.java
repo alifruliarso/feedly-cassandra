@@ -59,6 +59,8 @@ public @interface ColumnFamily
      * The time to live for this column family. Note this is applied on a per column basis. Updating one column will *not* affect the 
      * lifetime of another column in the same family. This can be overridden at the column level by specifying a ttl at the property level
      * using the {@link Column} annotation.
+     * <p>
+     * ttls do not apply to counter columns.
      * 
      * @return the time to live duration
      */

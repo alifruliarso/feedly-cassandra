@@ -25,6 +25,7 @@ import com.feedly.cassandra.anno.Index;
 import com.feedly.cassandra.anno.Indexes;
 import com.feedly.cassandra.anno.RowKey;
 import com.feedly.cassandra.anno.UnmappedColumnHandler;
+import com.feedly.cassandra.dao.CounterColumn;
 
 /**
  * This class holds metadata for a given entity including key, property and index information.
@@ -42,6 +43,7 @@ public class EntityMetadata<V> extends EntityMetadataBase<V>
     private final String _familyName;
     private final String _walFamilyName;
     private final String _idxFamilyName;
+    private final String _counterFamilyName;
     private final List<IndexMetadata> _indexes;
     private final Map<SimplePropertyMetadata, List<IndexMetadata>> _indexesByProp;
 
@@ -58,7 +60,8 @@ public class EntityMetadata<V> extends EntityMetadataBase<V>
         _familyName = familyAnno.name();
         _walFamilyName = familyAnno.name() + "_idxwal";
         _idxFamilyName = familyAnno.name() + "_idx";
-
+        _counterFamilyName = familyAnno.name() + "_cntr";
+        
         Set<Annotation> beanAnnos = new HashSet<Annotation>();
         for(Annotation a : clazz.getAnnotations())
             beanAnnos.add(a);
@@ -241,7 +244,7 @@ public class EntityMetadata<V> extends EntityMetadataBase<V>
     {
         for(Field f : clazz.getDeclaredFields())
         {
-            if(f.isAnnotationPresent(Column.class) && !PropertyMetadataFactory.isSimpleType(f))
+            if(f.isAnnotationPresent(Column.class) && !PropertyMetadataFactory.isSimpleType(f) && !f.getType().equals(CounterColumn.class))
                 return false;
         }
         
@@ -299,5 +302,10 @@ public class EntityMetadata<V> extends EntityMetadataBase<V>
     public String getIndexFamilyName()
     {
         return _idxFamilyName;
+    }
+
+    public String getCounterFamilyName()
+    {
+        return _counterFamilyName;
     }
 }

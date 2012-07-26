@@ -15,6 +15,7 @@ import me.prettyprint.hector.api.Keyspace;
 import me.prettyprint.hector.api.Serializer;
 import me.prettyprint.hector.api.beans.DynamicComposite;
 import me.prettyprint.hector.api.beans.HColumn;
+import me.prettyprint.hector.api.beans.HCounterColumn;
 import me.prettyprint.hector.api.factory.HFactory;
 import me.prettyprint.hector.api.mutation.Mutator;
 
@@ -37,8 +38,8 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
 {
     private static final LongSerializer SER_LONG = LongSerializer.get();
 
-    private static final byte[] WAL_COL_NAME = StringSerializer.get().toBytes("rowkey"); 
-    private static final byte[] IDX_COL_VAL = new byte[] {0}; 
+    static final byte[] WAL_COL_NAME = StringSerializer.get().toBytes("rowkey"); 
+    static final byte[] IDX_COL_VAL = new byte[] {0}; 
 
     PutHelper(EntityMetadata<V> meta, IKeyspaceFactory factory)
     {
@@ -132,6 +133,12 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
         
         
         //do after execution
+        if(overallStatus.savedCounters != null)
+        {
+            for(CounterColumn cc : overallStatus.savedCounters)
+                cc.reset();
+        }
+                
         resetEntities(values);
         if(overallStatus.savedEntities != null)
         {
@@ -184,31 +191,69 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
 
                         if(propVal != null)
                         {
-                            HColumn column = HFactory.createColumn(colBase, propVal, clock, SER_COMPOSITE, (Serializer) spm.getSerializer());
-                            if(spm.isTtlSet())
-                                column.setTtl(spm.ttl());
                             
-                            mutator.addInsertion(keyBytes, _entityMeta.getFamilyName(), column);
+                            if(spm.hasCounter())
+                            {
+                                CounterColumn cc = (CounterColumn) propVal;
+                                if(cc.dirty())
+                                {
+                                    HCounterColumn<DynamicComposite> counterColumn = HFactory.createCounterColumn(colBase, cc.getIncrement(), SER_COMPOSITE);
+                                    mutator.addCounter(keyBytes, _entityMeta.getCounterFamilyName(), counterColumn);
+                                    rv.addCounter(cc);
+                                }
+                                else
+                                    rv.updateCnt--; //no update, offset increment below
+                            }
+                            else
+                            {
+                                HColumn column = HFactory.createColumn(colBase, propVal, clock, SER_COMPOSITE, (Serializer) spm.getSerializer());
+                                if(spm.isTtlSet())
+                                    column.setTtl(spm.ttl());
+
+                                mutator.addInsertion(keyBytes, _entityMeta.getFamilyName(), column);
+                            }
                         }
                         else
                         {
-                            mutator.addDeletion(keyBytes, _entityMeta.getFamilyName(), colBase, SER_COMPOSITE, clock);
+                            if(spm.hasCounter())
+                                mutator.addCounterDeletion(keyBytes, _entityMeta.getCounterFamilyName(), colBase, SER_COMPOSITE);
+                            else
+                                mutator.addDeletion(keyBytes, _entityMeta.getFamilyName(), colBase, SER_COMPOSITE, clock);
                         }
+                        
                         colBase.remove(colBase.size()-1);
                     }
                     else
                     {
                         if(propVal != null)
                         {
-                            HColumn column = HFactory.createColumn(colMeta.getPhysicalNameBytes(), propVal, clock, SER_BYTES, (Serializer) spm.getSerializer());
-                            if(spm.isTtlSet())
-                                column.setTtl(spm.ttl());
-                            
-                            mutator.addInsertion(keyBytes, _entityMeta.getFamilyName(), column);
+                            if(spm.hasCounter())
+                            {
+                                CounterColumn cc = (CounterColumn) propVal;
+                                if(cc.dirty())
+                                {
+                                    HCounterColumn<byte[]> counterColumn = HFactory.createCounterColumn(colMeta.getPhysicalNameBytes(), cc.getIncrement(), SER_BYTES);
+                                    mutator.addCounter(keyBytes, _entityMeta.getCounterFamilyName(), counterColumn);
+                                    rv.addCounter(cc);
+                                }
+                                else
+                                    rv.updateCnt--; //no update, offset increment below
+                            }
+                            else
+                            {
+                                HColumn column = HFactory.createColumn(colMeta.getPhysicalNameBytes(), propVal, clock, SER_BYTES, (Serializer) spm.getSerializer());
+                                if(spm.isTtlSet())
+                                    column.setTtl(spm.ttl());
+                                
+                                mutator.addInsertion(keyBytes, _entityMeta.getFamilyName(), column);
+                            }
                         }
                         else
                         {
-                            mutator.addDeletion(keyBytes, _entityMeta.getFamilyName(), colMeta.getPhysicalNameBytes(), SER_BYTES, clock);
+                            if(spm.hasCounter())
+                                mutator.addCounterDeletion(keyBytes, _entityMeta.getCounterFamilyName(), colMeta.getPhysicalNameBytes(), SER_BYTES);
+                            else
+                                mutator.addDeletion(keyBytes, _entityMeta.getFamilyName(), colMeta.getPhysicalNameBytes(), SER_BYTES, clock);
                         }
                     
                         for(IndexMetadata idxMeta : _entityMeta.getIndexes((SimplePropertyMetadata) colMeta))
@@ -670,6 +715,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
         int updateCnt;
         int indexUpdateCnt;
         List<Object> savedEntities;
+        List<CounterColumn> savedCounters;
         
         SaveStatus merge(SaveStatus other)
         {
@@ -680,6 +726,11 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
             if(savedEntities != null && other.savedEntities != null)
                 savedEntities.addAll(other.savedEntities);
             
+            if(savedCounters == null && other.savedCounters != null)
+                savedCounters = other.savedCounters;
+            if(savedCounters != null && other.savedCounters != null)
+                savedCounters.addAll(other.savedCounters);
+            
             return this;
         }
         
@@ -688,6 +739,13 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
             if(savedEntities == null)
                 savedEntities = new ArrayList<Object>();
             savedEntities.add(e);
+        }
+
+        void addCounter(CounterColumn c)
+        {
+            if(savedCounters == null)
+                savedCounters = new ArrayList<CounterColumn>();
+            savedCounters.add(c);
         }
     }
 

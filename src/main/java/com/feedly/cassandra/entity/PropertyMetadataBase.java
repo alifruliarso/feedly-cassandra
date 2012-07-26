@@ -129,6 +129,12 @@ import me.prettyprint.hector.api.beans.DynamicComposite;
         return _ttl;
     }
     
+    //does the property metadata have a counter column?
+    public abstract boolean hasCounter();
+    
+    //does the property metadata have a normal column?
+    public abstract boolean hasSimple();
+    
     @Override
     public int compareTo(PropertyMetadataBase o)
     {

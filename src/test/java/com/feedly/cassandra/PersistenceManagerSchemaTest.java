@@ -1,6 +1,10 @@
 package com.feedly.cassandra;
 
 import static org.junit.Assert.*;
+
+import java.util.HashSet;
+import java.util.Set;
+
 import me.prettyprint.hector.api.ddl.ColumnDefinition;
 import me.prettyprint.hector.api.ddl.ColumnFamilyDefinition;
 import me.prettyprint.hector.api.ddl.ColumnIndexType;
@@ -12,8 +16,10 @@ import org.junit.Test;
 
 import com.feedly.cassandra.anno.ColumnFamily;
 import com.feedly.cassandra.entity.enhance.CompositeIndexedBean;
+import com.feedly.cassandra.entity.enhance.CounterBean;
 import com.feedly.cassandra.entity.enhance.IndexedBean;
 import com.feedly.cassandra.entity.enhance.ListBean;
+import com.feedly.cassandra.entity.enhance.ParentCounterBean;
 import com.feedly.cassandra.entity.enhance.PartitionedIndexBean;
 import com.feedly.cassandra.entity.enhance.SampleBean;
 import com.feedly.cassandra.entity.upd_enhance.SampleBean2;
@@ -41,6 +47,30 @@ public class PersistenceManagerSchemaTest extends CassandraServiceTestBase
         }
         
         fail("SampleBean's table not found");
+    }
+    
+    @Test
+    public void testCounterTable()
+    {
+        PersistenceManager pm = new PersistenceManager();
+        configurePersistenceManager(pm);
+        
+        pm.setPackagePrefixes(new String[] {SampleBean.class.getPackage().getName()});
+        pm.init();
+        
+        Set<String> counterTables = new HashSet<String>();
+        for(ColumnFamilyDefinition cfdef : cluster.describeKeyspace(KEYSPACE).getCfDefs())
+        {
+            if(cfdef.getName().endsWith("_cntr"))
+                counterTables.add(cfdef.getName());
+        }
+
+        Set<String> expected = new HashSet<String>();
+        
+        expected.add(CounterBean.class.getAnnotation(ColumnFamily.class).name() + "_cntr");
+        expected.add(ParentCounterBean.class.getAnnotation(ColumnFamily.class).name() + "_cntr");
+
+        assertEquals(expected, counterTables);
     }
     
     @Test

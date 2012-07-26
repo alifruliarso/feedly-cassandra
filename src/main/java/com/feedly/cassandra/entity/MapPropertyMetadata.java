@@ -7,6 +7,8 @@ import java.lang.reflect.Type;
 import java.util.Map;
 import java.util.SortedMap;
 
+import com.feedly.cassandra.dao.CounterColumn;
+
 public class MapPropertyMetadata extends PropertyMetadataBase
 {
     private final SimplePropertyMetadata _keyPropertyMetadata;
@@ -42,6 +44,9 @@ public class MapPropertyMetadata extends PropertyMetadataBase
             
             _keyPropertyMetadata = (SimplePropertyMetadata) keyMeta;
             _valuePropertyMetadata = PropertyMetadataFactory.buildPropertyMetadata("", ptype.getActualTypeArguments()[1], null, physicalName, ttl, null, null, null, false);
+            
+            if(_keyPropertyMetadata.getFieldType().equals(CounterColumn.class))
+                throw new IllegalStateException("counter columns may not be used as keys" + physicalName + ", type " + type);
         }
         else
         {
@@ -59,4 +64,14 @@ public class MapPropertyMetadata extends PropertyMetadataBase
         return _valuePropertyMetadata;
     }
 
+    public boolean hasCounter()
+    {
+        return _valuePropertyMetadata.hasCounter();
+    }
+    
+    public boolean hasSimple()
+    {
+        return _valuePropertyMetadata.hasSimple();
+    }
+    
 }

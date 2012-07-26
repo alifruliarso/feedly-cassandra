@@ -12,6 +12,7 @@ public class GetAllOptions extends GetOptions
     private static final int SIZE_UNLIMITED = Integer.MAX_VALUE;
     
     private int _maxRows = SIZE_UNLIMITED;
+    private boolean _getNormalColumns = true;
     
     /**
      * create options using default values.
@@ -67,5 +68,51 @@ public class GetAllOptions extends GetOptions
         if(maxRows <= 0)
             throw new IllegalArgumentException("must be positive: " + maxRows);
         _maxRows = maxRows;
+    }
+    
+    /**
+     * set the get to retrieve normal columns. defaults to true.
+     * <p>
+     * Cassandra stores counters in a separate column family making it difficult to efficiently scan both the normal and counter column.
+     * Therefore only normal or counter columns may be retrieved. To retrieve the rest of the row, update the retrieved rows using 
+     * {@link CassandraDaoBase#mget(java.util.List, java.util.List, GetOptions). In certain cases both normal and counter columns will be 
+     * returned but this should not be relied upon.
+     *
+     */
+    public void setGetNormalColumns()
+    {
+        _getNormalColumns = true;
+    }
+
+    /**
+     * set the get to retrieve counter columns. defaults to false. 
+     * <p>
+     * Cassandra stores counters in a separate column family making it difficult to efficiently scan both the normal and counter column. 
+     * Therefore only normal or counter columns may be retrieved. To retrieve the rest of the row, update the retrieved rows using 
+     * {@link CassandraDaoBase#mget(java.util.List, java.util.List, GetOptions). In certain cases both normal and counter columns will be 
+     * returned but this should not be relied upon.
+     * 
+     */
+    public void setGetCounterColumns()
+    {
+        _getNormalColumns = false;
+    }
+
+    /**
+     * get if retrieving normal columns.
+     * @return true if the retrieving normal columns
+     */
+    public boolean gettingNormalColumns()
+    {
+        return _getNormalColumns;
+    }
+    
+    /**
+     * get if retrieving counter columns.
+     * @return true if the retrieving counter columns
+     */
+    public boolean gettingCounterColumns()
+    {
+        return !_getNormalColumns;
     }
 }

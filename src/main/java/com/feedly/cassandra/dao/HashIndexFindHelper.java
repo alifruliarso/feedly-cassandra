@@ -53,11 +53,11 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
         switch(options.getColumnFilterStrategy())
         {
             case UNFILTERED:
-                return bulkFindByIndexPartial(template, null, null, null, null, options.getMaxRows(), index, options.getConsistencyLevel());
+                return bulkFindByIndexPartial(template, null, null, null, null, null, options.getMaxRows(), index, options.getConsistencyLevel());
             case RANGE:
                 byte[] startCol = propertyName(options.getStartColumn(), ComponentEquality.EQUAL);
                 byte[] endCol = propertyName(options.getEndColumn(), ComponentEquality.GREATER_THAN_EQUAL);
-                return bulkFindByIndexPartial(template, startCol, endCol, null, null, options.getMaxRows(), index, options.getConsistencyLevel());
+                return bulkFindByIndexPartial(template, startCol, endCol, null, null, null, options.getMaxRows(), index, options.getConsistencyLevel());
             case INCLUDES:
                 return mfind(template, options.getIncludes(), options.getExcludes(), options.getMaxRows(), index, options.getConsistencyLevel());
         }
@@ -74,9 +74,10 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
             throw new IllegalArgumentException("either includes or excludes should be specified, not both");
         
         List<byte[]> colNames = new ArrayList<byte[]>();
-        List<CollectionRange> ranges = derivePartialColumns(colNames, includes, excludes);
+        List<byte[]> counterColNames = new ArrayList<byte[]>();
+        List<CollectionRange> ranges = derivePartialColumns(colNames, counterColNames, includes, excludes);
 
-        return bulkFindByIndexPartial(template, null, null, colNames, ranges, maxRows, index, level);
+        return bulkFindByIndexPartial(template, null, null, colNames, counterColNames, ranges, maxRows, index, level);
         
     }
 
@@ -84,6 +85,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
                                                  byte[] startBytes, 
                                                  byte[] endBytes, 
                                                  List<byte[]> colNames,
+                                                 List<byte[]> counterColNames,
                                                  List<CollectionRange> ranges,
                                                  int maxRows, 
                                                  IndexMetadata index,
@@ -106,9 +108,11 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
             query.setRange(startBytes, endBytes, false, CassandraDaoBase.COL_RANGE_SIZE);
 
         return new LazyLoadedCollection(query, 
+                                        startBytes,
                                         endBytes, 
                                         ranges, 
                                         new EqualityValueFilter<V>(_entityMeta, template, index), 
+                                        counterColNames,
                                         maxRows,
                                         index,
                                         level);
@@ -116,13 +120,15 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
     
     @SuppressWarnings("unchecked")
     private byte[] fetchBatch(IndexedSlicesQuery<byte[],byte[],byte[]> query, 
-                               byte[] startRowKey, 
-                               byte[] endColBytes, 
-                               K lastKey, 
-                               int maxRows, 
-                               List<V> values, 
-                               List<CollectionRange> ranges,
-                               EConsistencyLevel level)
+                              byte[] startRowKey, 
+                              byte[] startColBytes, 
+                              byte[] endColBytes, 
+                              K lastKey, 
+                              int maxRows, 
+                              List<V> values, 
+                              List<byte[]> counterColNames,
+                              List<CollectionRange> ranges,
+                              EConsistencyLevel level)
     {
         SimplePropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
         int fetchRowCount = Math.min(maxRows, CassandraDaoBase.ROW_RANGE_SIZE);
@@ -176,6 +182,11 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
         int cnt = rows.getCount();
                 
         byte[] lastKeyBytes = cnt == 0 ? null : rows.getList().get(cnt - 1).getKey();
+
+        //if counters exist and must be fetched
+        if(_entityMeta.hasCounterColumns() && (counterColNames == null || !counterColNames.isEmpty()))
+            bulkLoadFromMultiCounterGet(keys, values, counterColNames, startColBytes, endColBytes, true, level);
+
         int nonNull = 0;
         for(int i = values.size() - 1; i >= 0; i--)
         {
@@ -198,11 +209,12 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
         private final IValueFilter<V> _filter;
         private final IndexMetadata _index;
         private byte[] _nextStartKey;
-        private final byte[] _endCol;
+        private final byte[] _startCol, _endCol;
         private int _remRows; //remaining rows left to fetch, based on max set by user and if the last batch fetched was maximal
         private List<V> _current;
         private Iterator<V> _currentIter;
         private V _next;
+        private final List<byte[]> _counterColNames;
         private List<CollectionRange> _ranges;
         private int _iteratedCount = 0;
         private final EConsistencyLevel _level;
@@ -211,8 +223,10 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
                                   List<V> first,
                                   IndexedSlicesQuery<byte[],byte[],byte[]> query, 
                                   byte[] nextStartKey, 
+                                  byte[] startCol,
                                   byte[] endCol, 
-                                  List<CollectionRange> ranges, 
+                                  List<byte[]> counterColNames,
+                                  List<CollectionRange> ranges,
                                   IValueFilter<V> filter,
                                   int maxRows,
                                   IndexMetadata index,
@@ -228,6 +242,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
             _query = query;
             _nextStartKey = nextStartKey;
             _ranges = ranges;
+            _counterColNames = counterColNames;
             _level = level;
             
             if(first.size() < CassandraDaoBase.ROW_RANGE_SIZE)
@@ -235,6 +250,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
             else
                 _remRows = maxRows - first.size();
             
+            _startCol = startCol;
             _endCol = endCol;
         }
 
@@ -276,7 +292,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
                         V last = _current.get(_current.size() - 1);
                         K lastKey = (K) invokeGetter(keyMeta, last);
                         _current.clear(); 
-                        _nextStartKey = fetchBatch(_query, _nextStartKey, _endCol, lastKey, _remRows, _current, _ranges, _level);
+                        _nextStartKey = fetchBatch(_query, _nextStartKey, _startCol, _endCol, lastKey, _remRows, _current, _counterColNames, _ranges, _level);
                         
                         int cnt = _current.size();
                         if(cnt == 0) //get yielded no rows
@@ -328,6 +344,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
     private class LazyLoadedCollection extends AbstractCollection<V>
     {
         private byte[] _nextRowKeyBytes;
+        private byte[] _startColBytes;
         private byte[] _endColBytes;
         private int _maxRows;
         private IndexedSlicesQuery<byte[], byte[], byte[]> _query;
@@ -338,20 +355,25 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
         private List<V> _first = new ArrayList<V>();
         private final List<CollectionRange> _ranges;
         private final EConsistencyLevel _level;
+        private final List<byte[]> _counterColNames;
         
         @SuppressWarnings("unchecked")
         public LazyLoadedCollection(IndexedSlicesQuery<byte[], byte[], byte[]> query, 
+                                    byte[] startColBytes, 
                                     byte[] endColBytes, 
                                     List<CollectionRange> ranges,
                                     IValueFilter<V> filter,
+                                    List<byte[]> counterColNames, 
                                     int maxRows,
                                     IndexMetadata index,
                                     EConsistencyLevel level)
         {
             _query = query;
+            _startColBytes = startColBytes;
             _endColBytes = endColBytes;
             _maxRows = maxRows;
             _filter = filter;
+            _counterColNames = counterColNames;
             _index = index;
             _ranges = ranges;
             _level = level;
@@ -359,7 +381,11 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
             K lastKey = null;
             while(true) //loop until unfiltered rows are found
             {
-                _nextRowKeyBytes = fetchBatch(query, _nextRowKeyBytes, endColBytes, lastKey, maxRows, _first, _ranges, _level);
+                _nextRowKeyBytes = fetchBatch(query, _nextRowKeyBytes, 
+                                              startColBytes, endColBytes, 
+                                              lastKey, maxRows, _first, 
+                                              _counterColNames, _ranges, 
+                                              _level);
                 if(_first.isEmpty())
                     break;
                 
@@ -380,7 +406,6 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
             if(_first.size() == maxRows || _first.isEmpty()) //loaded all rows or none exist
             {
                 _all = _first;
-                
             }
         }
         
@@ -419,7 +444,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
             if(_all != null)
                 return _all.iterator();
             
-            return new LazyLoadedIterator(this, _first, _query, _nextRowKeyBytes, _endColBytes, _ranges, _filter, _maxRows, _index, _level);
+            return new LazyLoadedIterator(this, _first, _query, _nextRowKeyBytes, _startColBytes, _endColBytes, _counterColNames, _ranges, _filter, _maxRows, _index, _level);
         }
     }
 }

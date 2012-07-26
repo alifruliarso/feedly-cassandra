@@ -33,7 +33,6 @@ public class EnhancerTest
          * 6 longVal
          * 7 sampleEnum
          * 8 strVal
-         * 
          * also not saved val is not saved
          */
         
@@ -67,9 +66,16 @@ public class EnhancerTest
 
         assertTrue(map == bean.getUnmapped());
         assertTrue(enh.getUnmappedFieldsModified());
+
+        //test counters - dirty field should work on getters AND setters
+        CounterBean cbean = new CounterBean();
+        enh = (IEnhancedEntity) cbean;
+        cbean.getCounterVal();
+        assertEquals(1, enh.getModifiedFields().cardinality());
+        assertTrue(enh.getModifiedFields().get(0));
+        
         
         //test collections - dirty field should work on getters AND setters
-        
         MapBean mapBean = new MapBean();
         enh = (IEnhancedEntity) mapBean;
         map = new HashMap<String, Object>();

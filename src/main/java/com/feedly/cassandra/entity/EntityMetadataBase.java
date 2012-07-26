@@ -41,6 +41,7 @@ public class EntityMetadataBase<V>
     private final Map<PropertyMetadataBase, Integer> _propPositions;
     private final boolean _useCompositeColumns;
     private final MapPropertyMetadata _unmappedHandler;
+    private final boolean _hasCounterCols, _hasNormalCols;
 
     @SuppressWarnings("unchecked")
     public EntityMetadataBase(Class<V> clazz, boolean useCompositeColumns, int ttl, boolean overrideTtl)
@@ -52,7 +53,8 @@ public class EntityMetadataBase<V>
         Map<String, PropertyMetadataBase>  propsByPhysical = new TreeMap<String, PropertyMetadataBase>();
         Map<String, Set<PropertyMetadataBase>> propsByAnno = new TreeMap<String, Set<PropertyMetadataBase>>();
         MapPropertyMetadata unmappedHandler = null;
-
+        boolean hasCounters = false, hasNormalColumns = false;
+        
         for(Field f : clazz.getDeclaredFields())
         {
             Method getter = getGetter(f);
@@ -97,6 +99,8 @@ public class EntityMetadataBase<V>
                         PropertyMetadataFactory.buildPropertyMetadata(f, col, colTtl, getter, setter, 
                                                                       (Class<? extends Serializer<?>>) anno.serializer(), useCompositeColumns);
                 
+                hasCounters = hasCounters || pm.hasCounter();
+                hasNormalColumns = hasNormalColumns || pm.hasSimple();
                 props.put(f.getName(), pm);
                 if(propsByPhysical.put(col, pm) != null)
                     throw new IllegalStateException(f.getName() + ": physical column name must be unique - " + col);
@@ -114,6 +118,8 @@ public class EntityMetadataBase<V>
             }
         }
 
+        _hasCounterCols = hasCounters;
+        _hasNormalCols = hasNormalColumns;
         _unmappedHandler = unmappedHandler;
 
         for(Entry<String, Set<PropertyMetadataBase>> annos : propsByAnno.entrySet())
@@ -221,6 +227,17 @@ public class EntityMetadataBase<V>
     public MapPropertyMetadata getUnmappedHandler()
     {
         return _unmappedHandler;
+    }
+    
+
+    public boolean hasCounterColumns()
+    {
+        return _hasCounterCols;
+    }
+
+    public boolean hasNormalColumns()
+    {
+        return _hasNormalCols;
     }
     
     @Override

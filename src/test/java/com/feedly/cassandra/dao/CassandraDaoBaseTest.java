@@ -25,11 +25,14 @@ import me.prettyprint.cassandra.serializers.LongSerializer;
 import me.prettyprint.cassandra.serializers.StringSerializer;
 import me.prettyprint.hector.api.Keyspace;
 import me.prettyprint.hector.api.beans.ColumnSlice;
+import me.prettyprint.hector.api.beans.CounterSlice;
 import me.prettyprint.hector.api.beans.DynamicComposite;
 import me.prettyprint.hector.api.beans.HColumn;
+import me.prettyprint.hector.api.beans.HCounterColumn;
 import me.prettyprint.hector.api.beans.Row;
 import me.prettyprint.hector.api.factory.HFactory;
 import me.prettyprint.hector.api.query.RangeSlicesQuery;
+import me.prettyprint.hector.api.query.SliceCounterQuery;
 import me.prettyprint.hector.api.query.SliceQuery;
 
 import org.junit.Before;
@@ -44,14 +47,17 @@ import com.feedly.cassandra.entity.EnumSerializer;
 import com.feedly.cassandra.entity.IndexMetadata;
 import com.feedly.cassandra.entity.TestPartitioner;
 import com.feedly.cassandra.entity.enhance.CompositeIndexedBean;
+import com.feedly.cassandra.entity.enhance.CounterBean;
 import com.feedly.cassandra.entity.enhance.ESampleEnum;
 import com.feedly.cassandra.entity.enhance.EmbeddedBean;
+import com.feedly.cassandra.entity.enhance.EmbeddedCounterBean;
 import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 import com.feedly.cassandra.entity.enhance.IndexedBean;
 import com.feedly.cassandra.entity.enhance.ListBean;
 import com.feedly.cassandra.entity.enhance.MapBean;
 import com.feedly.cassandra.entity.enhance.NestedBean;
 import com.feedly.cassandra.entity.enhance.ParentBean;
+import com.feedly.cassandra.entity.enhance.ParentCounterBean;
 import com.feedly.cassandra.entity.enhance.PartitionedIndexBean;
 import com.feedly.cassandra.entity.enhance.SampleBean;
 import com.feedly.cassandra.entity.enhance.SortedMapBean;
@@ -62,14 +68,22 @@ import com.feedly.cassandra.test.CassandraServiceTestBase;
 public class CassandraDaoBaseTest extends CassandraServiceTestBase
 {
     PersistenceManager _pm;
+
     SampleBeanDao _dao;
+    
     MapBeanDao _mapDao;
     SortedMapBeanDao _sortedMapDao;
+    
     ListBeanDao _listDao;
+    
     ParentBeanDao _parentBeanDao;
     NestedBeanDao _nestedBeanDao;
+
     IndexedBeanDao _indexedDao;
     CompositeIndexedBeanDao _compositeIndexedDao;
+    
+    CounterBeanDao _counterDao;
+    ParentCounterBeanDao _parentCounterDao;
     
     RecordingStrategy _indexedStrategy, _compositeStrategy;
     
@@ -80,6 +94,10 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         _dao = new SampleBeanDao();
         _dao.setKeyspaceFactory(_pm);
         _dao.init();
+
+        _counterDao = new CounterBeanDao();
+        _counterDao.setKeyspaceFactory(_pm);
+        _counterDao.init();
         
         _mapDao = new MapBeanDao();
         _mapDao.setKeyspaceFactory(_pm);
@@ -96,6 +114,10 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         _parentBeanDao = new ParentBeanDao();
         _parentBeanDao.setKeyspaceFactory(_pm);
         _parentBeanDao.init();
+        
+        _parentCounterDao = new ParentCounterBeanDao();
+        _parentCounterDao.setKeyspaceFactory(_pm);
+        _parentCounterDao.init();
         
         _nestedBeanDao = new NestedBeanDao();
         _nestedBeanDao.setKeyspaceFactory(_pm);
@@ -249,6 +271,97 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         assertBean("dirty test", bean0, query.execute().get());
     }
 
+    @Test
+    public void testCounterPut()
+    {
+        int numBeans = 5;
+        List<CounterBean> beans = new ArrayList<CounterBean>();
+        List<ParentCounterBean> pbeans = new ArrayList<ParentCounterBean>();
+        
+        for(int i = 0; i < numBeans; i++)
+        {
+            CounterBean bean = new CounterBean();
+            bean.setRowKey(new Long(i));
+            bean.setCounterVal(new CounterColumn(i*10));
+            beans.add(bean);
+
+            ParentCounterBean pbean = new ParentCounterBean();
+            pbean.setRowkey(new Long(i));
+            pbean.setCounterProp(new CounterColumn(i*20));
+            pbean.setEmbeddedProp(createEmbeddedCounterBean(i));
+            pbeans.add(pbean);
+        }
+        
+        for(CounterBean bean : beans)
+        {
+            _counterDao.put(bean);
+            assertTrue(((IEnhancedEntity) bean).getModifiedFields().isEmpty());
+            assertFalse(((IEnhancedEntity) bean).getUnmappedFieldsModified());
+            SliceCounterQuery<Long,String> query = HFactory.createCounterSliceQuery(keyspace, LongSerializer.get(), StringSerializer.get());
+            
+            query.setKey(bean.getRowKey());
+            query.setColumnFamily("counter_cntr");
+            query.setRange("", "", false, 100);
+            CounterSlice<String> columnSlice = query.execute().get();
+            HCounterColumn<String> counterColumn = columnSlice.getColumns().get(0);
+            
+            assertEquals("beans[" + bean.getRowKey() + "]", 1, columnSlice.getColumns().size());
+            assertEquals("beans[" + bean.getRowKey() + "]", bean.getRowKey()*10, counterColumn.getValue());
+            assertEquals("c", counterColumn.getName());
+            
+            bean.getCounterVal().setIncrement(10);
+            _counterDao.put(bean);
+
+            columnSlice = query.execute().get();
+            counterColumn = columnSlice.getColumns().get(0);
+            
+            assertEquals("beans[" + bean.getRowKey() + "]", 10 + bean.getRowKey()*10, counterColumn.getValue());
+            
+            /*
+             * null out values and resave, ensure values are deleted
+             */
+            bean.setCounterVal(null);
+            _counterDao.put(bean);
+            columnSlice = query.execute().get();
+            assertTrue(columnSlice.getColumns().isEmpty());
+        }
+
+        for(ParentCounterBean bean : pbeans)
+        {
+            _parentCounterDao.put(bean);
+            assertTrue(((IEnhancedEntity) bean).getModifiedFields().isEmpty());
+            assertFalse(((IEnhancedEntity) bean).getUnmappedFieldsModified());
+            SliceCounterQuery<Long,DynamicComposite> query = HFactory.createCounterSliceQuery(keyspace, LongSerializer.get(), DynamicCompositeSerializer.get());
+            
+            query.setKey(bean.getRowkey());
+            query.setColumnFamily("parentcounterbean_cntr");
+            query.setRange(new DynamicComposite(""), new DynamicComposite("z"), false, 100);
+            CounterSlice<DynamicComposite> columnSlice = query.execute().get();
+            
+            assertEquals("beans[" + bean.getRowkey() + "]", 2, columnSlice.getColumns().size());
+            assertEquals("beans[" + bean.getRowkey() + "]", bean.getRowkey() * 20, columnSlice.getColumnByName(new DynamicComposite("c")).getValue());
+            assertEquals("beans[" + bean.getRowkey() + "]", bean.getRowkey(), columnSlice.getColumnByName(new DynamicComposite("e", "c")).getValue());
+            
+            bean.getCounterProp().setIncrement(10);
+            _parentCounterDao.put(bean);
+            
+            columnSlice = query.execute().get();
+            assertEquals("beans[" + bean.getRowkey() + "]", 2, columnSlice.getColumns().size());
+            assertEquals("beans[" + bean.getRowkey() + "]", bean.getRowkey() * 20 + 10, columnSlice.getColumnByName(new DynamicComposite("c")).getValue());
+            assertEquals("beans[" + bean.getRowkey() + "]", bean.getRowkey(), columnSlice.getColumnByName(new DynamicComposite("e", "c")).getValue());
+            
+            /*
+             * null out values and resave, ensure values are deleted
+             */
+            bean.getEmbeddedProp().setCounterProp(null);
+            _parentCounterDao.put(bean);
+            columnSlice = query.execute().get();
+            assertEquals("beans[" + bean.getRowkey() + "]", 1, columnSlice.getColumns().size());
+            assertEquals("beans[" + bean.getRowkey() + "]", bean.getRowkey() * 20 + 10, columnSlice.getColumnByName(new DynamicComposite("c")).getValue());
+            assertNull("beans[" + bean.getRowkey() + "]", columnSlice.getColumnByName(new DynamicComposite("e", "c")));
+        }
+    }
+    
     @Test
     public void testColumnFamilyTtl() throws InterruptedException
     {
@@ -422,6 +535,106 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         
     }
 
+    @Test
+    public void testCounterDelete()
+    {
+        int numBeans = 5;
+        List<CounterBean> beans = new ArrayList<CounterBean>();
+        List<ParentCounterBean> pbeans = new ArrayList<ParentCounterBean>();
+        
+        for(int i = 0; i < numBeans; i++)
+        {
+            CounterBean bean = new CounterBean();
+            bean.setRowKey(new Long(i));
+            bean.setCounterVal(new CounterColumn(i*10));
+            beans.add(bean);
+
+            ParentCounterBean pbean = new ParentCounterBean();
+            pbean.setRowkey(new Long(i));
+            pbean.setCounterProp(new CounterColumn(i*20));
+            pbeans.add(pbean);
+
+            _counterDao.put(bean);
+            _parentCounterDao.put(pbean);
+        }
+        
+        CounterBean bean0 = beans.get(0);
+        ParentCounterBean pbean0 = pbeans.get(0);
+        
+        _counterDao.delete(bean0.getRowKey());
+        _parentCounterDao.delete(pbean0.getRowkey());
+        
+        for(int i = 0; i < numBeans; i++)
+        {
+            CounterBean bean = beans.get(i);
+            SliceCounterQuery<Long,String> query = HFactory.createCounterSliceQuery(keyspace, LongSerializer.get(), StringSerializer.get());
+            query.setKey(bean.getRowKey());
+            query.setColumnFamily("counter_cntr");
+            query.setRange("", "", false, 100);
+            CounterSlice<String> columnSlice = query.execute().get();
+            
+            if(i == 0)
+            {
+                assertEquals(0, columnSlice.getColumns().size()); //"tombstone" row still exists
+//                assertNull(_dao.get(bean0.getRowKey()));
+            }
+            else
+                assertEquals("beans[" + bean.getRowKey() + "]", 1, columnSlice.getColumns().size());
+            
+            
+            ParentCounterBean pbean = pbeans.get(i);
+            SliceCounterQuery<Long, DynamicComposite> pquery = HFactory.createCounterSliceQuery(keyspace, LongSerializer.get(), DynamicCompositeSerializer.get());
+            pquery.setKey(pbean.getRowkey());
+            pquery.setColumnFamily("parentcounterbean_cntr");
+            pquery.setRange(new DynamicComposite(""), new DynamicComposite("z"), false, 100);
+            CounterSlice<String> pslice = query.execute().get();
+            
+            if(i == 0)
+            {
+                assertEquals(0, pslice.getColumns().size()); //"tombstone" row still exists
+//                assertNull(_dao.get(bean0.getRowKey()));
+            }
+            else
+                assertEquals("beans[" + bean.getRowKey() + "]", 1, pslice.getColumns().size());
+        }
+        
+        _counterDao.mdelete(Arrays.asList(beans.get(1).getRowKey(), beans.get(2).getRowKey()));
+        _parentCounterDao.mdelete(Arrays.asList(pbeans.get(1).getRowkey(), pbeans.get(2).getRowkey()));
+
+        for(int i = 0; i < numBeans; i++)
+        {
+            CounterBean bean = beans.get(i);
+            SliceCounterQuery<Long,String> query = HFactory.createCounterSliceQuery(keyspace, LongSerializer.get(), StringSerializer.get());
+            query.setKey(bean.getRowKey());
+            query.setColumnFamily("counter_cntr");
+            query.setRange("", "", false, 100);
+            CounterSlice<String> columnSlice = query.execute().get();
+            
+            if(i < 3)
+            {
+                assertEquals(0, columnSlice.getColumns().size()); //"tombstone" row still exists
+//                assertNull(_dao.get(bean0.getRowKey()));
+            }
+            else
+                assertEquals("beans[" + bean.getRowKey() + "]", 1, columnSlice.getColumns().size());
+            
+            ParentCounterBean pbean = pbeans.get(i);
+            SliceCounterQuery<Long, DynamicComposite> pquery = HFactory.createCounterSliceQuery(keyspace, LongSerializer.get(), DynamicCompositeSerializer.get());
+            pquery.setKey(pbean.getRowkey());
+            pquery.setColumnFamily("parentcounterbean_cntr");
+            pquery.setRange(new DynamicComposite(""), new DynamicComposite("z"), false, 100);
+            CounterSlice<String> pslice = query.execute().get();
+            
+            if(i < 3)
+            {
+                assertEquals(0, pslice.getColumns().size()); //"tombstone" row still exists
+//                assertNull(_dao.get(bean0.getRowKey()));
+            }
+            else
+                assertEquals("beans[" + bean.getRowKey() + "]", 1, pslice.getColumns().size());
+        }
+    }
+    
     private EmbeddedBean embeddedBean(int cnt, int mult)
     {
         EmbeddedBean rv = new EmbeddedBean();
@@ -785,6 +998,209 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         }
     }
 
+    private EmbeddedCounterBean createEmbeddedCounterBean(long base)
+    {
+        EmbeddedCounterBean ebean = new EmbeddedCounterBean();
+        ebean.setCounterProp(new CounterColumn(base));
+        ebean.setStrProp("estr-"+ base);
+        
+        return ebean;
+    }
+    
+    private ParentCounterBean createParentCounterBean(long key)
+    {
+        ParentCounterBean bean = new ParentCounterBean();
+        long inc = key*10;
+        bean.setRowkey(key);
+        bean.setCounterProp(new CounterColumn(inc++));
+        bean.setStrProp("str-"+key);
+        bean.setEmbeddedProp(createEmbeddedCounterBean(inc++));
+        
+        bean.setListProp(new ArrayList<EmbeddedCounterBean>());
+        bean.setMapProp(new HashMap<String, EmbeddedCounterBean>());
+        for(int i = 0; i <= key; i++)
+            bean.getListProp().add(createEmbeddedCounterBean(inc++));
+
+        for(int i = 0; i <= key; i++)
+            bean.getMapProp().put("mapkey-" + i, createEmbeddedCounterBean(inc++));
+        
+        return bean;
+    }
+    
+
+    private void convertParentCounterBean(ParentCounterBean bean)
+    {
+        bean.setCounterProp(toStoredForm(bean.getCounterProp()));
+        convertEmbeddedCounterBean(bean.getEmbeddedProp());
+        for(EmbeddedCounterBean e : bean.getListProp())
+            convertEmbeddedCounterBean(e);
+        
+        for(EmbeddedCounterBean e : bean.getMapProp().values())
+            convertEmbeddedCounterBean(e);
+    }
+
+    private void convertEmbeddedCounterBean(EmbeddedCounterBean bean)
+    {
+        bean.setCounterProp(toStoredForm(bean.getCounterProp()));
+    }
+
+    private CounterColumn toStoredForm(CounterColumn cc)
+    {
+        return new CounterColumn(cc.getIncrement(), null);
+    }
+    
+    @Test
+    public void testCounterGet()
+    {
+        int numBeans = 5;
+        List<CounterBean> beans = new ArrayList<CounterBean>();
+        List<ParentCounterBean> pbeans = new ArrayList<ParentCounterBean>();
+        List<Long> keys = new ArrayList<Long>();
+        for(int i = 0; i < numBeans; i++)
+        {
+            CounterBean cbean = new CounterBean();
+            cbean.setRowKey((long) i);
+            cbean.setCounterVal(new CounterColumn(i*10));
+            beans.add(cbean);
+
+            CounterBean copy = new CounterBean();
+            copy.setRowKey(cbean.getRowKey());
+            copy.setCounterVal(new CounterColumn(i*10));
+            _counterDao.put(copy); //saving clears increment, use copy for comparisons
+
+            ParentCounterBean pbean = createParentCounterBean(i);
+            pbeans.add(pbean);
+            _parentCounterDao.put(createParentCounterBean(i)); 
+            
+            keys.add((long) i);
+        }
+
+        
+        List<CounterBean> actualBeans = new ArrayList<CounterBean>();
+        List<ParentCounterBean> actualPbeans = new ArrayList<ParentCounterBean>();
+        List<CounterBean> bulkActualBeans = new ArrayList<CounterBean>(_counterDao.mget(keys));
+        List<ParentCounterBean> bulkActualPbeans = new ArrayList<ParentCounterBean>(_parentCounterDao.mget(keys));
+        
+        Collections.sort(bulkActualBeans);
+        Collections.sort(bulkActualPbeans);
+        
+        for(int i = 0; i < numBeans; i++)
+        {
+            actualBeans.add(_counterDao.get(beans.get(i).getRowKey()));
+            actualPbeans.add(_parentCounterDao.get(pbeans.get(i).getRowkey()));
+
+            //convert counters to stored for easy comparison
+            beans.get(i).setCounterVal(toStoredForm(beans.get(i).getCounterVal()));
+            convertParentCounterBean(pbeans.get(i));
+        }
+
+        for(int i = 0; i < numBeans; i++)
+        {
+            CounterBean bean = beans.get(i), actual = actualBeans.get(i), bulkActual = bulkActualBeans.get(i);
+            assertEquals(bean, actual);
+            assertEquals(bean, bulkActual);
+
+            ParentCounterBean pbean = pbeans.get(i), pactual = actualPbeans.get(i), bulkPactual = bulkActualPbeans.get(i);
+            assertEquals(pbean, pactual);
+            assertEquals(pbean, bulkPactual);
+        }
+
+        
+        /*
+         * range
+         */
+        actualBeans = new ArrayList<CounterBean>();
+        actualPbeans = new ArrayList<ParentCounterBean>();
+        for(int i = 0; i < numBeans; i++)
+        {
+            actualBeans.add(_counterDao.get(beans.get(i).getRowKey(), null, new GetOptions("b", "d")));
+            actualPbeans.add(_parentCounterDao.get(pbeans.get(i).getRowkey(), null, new GetOptions(new CollectionProperty("listProp", 1), new CollectionProperty("listProp", 3))));
+        }
+
+        bulkActualBeans = _counterDao.mget(keys, null, new GetOptions("b", "d"));
+        bulkActualPbeans = _parentCounterDao.mget(keys, null, new GetOptions(new CollectionProperty("listProp", 1), new CollectionProperty("listProp", 3)));
+
+        Collections.sort(bulkActualBeans);
+
+        int nullCnt = 0;
+        for(int i = bulkActualPbeans.size() - 1; i >= 0; i--)
+        {
+            if(bulkActualPbeans.get(i) == null)
+            {
+                bulkActualPbeans.remove(i);
+                nullCnt++;
+            }
+        }
+        assertEquals(1, nullCnt);
+        Collections.sort(bulkActualPbeans); //can't sort a list with null vals.
+        bulkActualPbeans.add(0, null); //add the null value back to preserve the comparison ordering below
+        
+        for(int i = 0; i < numBeans; i++)
+        {
+            CounterBean bean = beans.get(i), actual = actualBeans.get(i), bulkActual = bulkActualBeans.get(i);
+            assertEquals(bean, actual);
+            assertEquals(bean, bulkActual);
+
+            ParentCounterBean pbean = pbeans.get(i), pactual = actualPbeans.get(i), bulkPactual = bulkActualPbeans.get(i);
+            if(i == 0)
+            {
+                assertNull(pactual);
+            }
+            else
+            {
+                for(ParentCounterBean a : Arrays.asList(pactual, bulkPactual))
+                {
+                    assertEquals(pbean.getRowkey(), a.getRowkey());
+                    assertNull(a.getCounterProp());
+                    assertNull(a.getEmbeddedProp());
+                    assertNull(a.getMapProp());
+                    assertNull(a.getStrProp());
+                    if(i >= 1)
+                    {
+                        for(int j = 1; j <= Math.min(i, 3); j++)
+                            assertEquals(pbean.getListProp().get(j), a.getListProp().get(j));
+                    }
+                }
+            }
+        }
+        
+        /*
+         * includes/excludes
+         */
+        actualBeans = new ArrayList<CounterBean>();
+        actualPbeans = new ArrayList<ParentCounterBean>();
+        
+        Set<Object> includes = new HashSet<Object>();
+        includes.add("counterProp");
+        includes.add("strProp");
+        includes.add(new CollectionProperty("embeddedProp", "s"));
+        includes.add("listProp");
+
+        for(int i = 0; i < numBeans; i++)
+        {
+            actualBeans.add(_counterDao.get(beans.get(i).getRowKey(), null, new GetOptions(Collections.singleton("counterVal"), null)));
+            actualPbeans.add(_parentCounterDao.get(pbeans.get(i).getRowkey(), null, new GetOptions(includes, null)));
+        }
+        
+        bulkActualBeans = _counterDao.mget(keys, null, new GetOptions(Collections.singleton("counterVal"), null));
+        bulkActualPbeans = _parentCounterDao.mget(keys, null, new GetOptions(includes, null));
+        
+        Collections.sort(bulkActualBeans);
+        Collections.sort(bulkActualPbeans);
+
+        for(int i = 0; i < numBeans; i++)
+        {
+            CounterBean bean = beans.get(i), actual = actualBeans.get(i), bulkActual = bulkActualBeans.get(i);
+            assertEquals(bean, actual);
+            assertEquals(bean, bulkActual);
+
+            ParentCounterBean pbean = pbeans.get(i), pactual = actualPbeans.get(i), bulkPactual = bulkActualPbeans.get(i);
+            pbean.getEmbeddedProp().setCounterProp(null);
+            pbean.setMapProp(null);
+            assertEquals(pbean, pactual);
+            assertEquals(pbean, bulkPactual);
+        }
+    }
     
     @Test
     public void testSimpleGet()
@@ -966,6 +1382,113 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
     }
     
     @Test
+    public void testCounterMgetAll()
+    {
+        int numBeans = 201;
+        List<CounterBean> beans = new ArrayList<CounterBean>();
+        List<ParentCounterBean> pbeans = new ArrayList<ParentCounterBean>();
+        List<Long> keys = new ArrayList<Long>();
+        
+        for(int i = 0; i < numBeans; i++)
+        {
+            CounterBean bean = new CounterBean();
+            bean.setRowKey(new Long(i));
+            bean.setCounterVal(new CounterColumn(i));
+            
+            beans.add(bean);
+            keys.add(beans.get(i).getRowKey());
+            
+            ParentCounterBean pbean = new ParentCounterBean();
+            pbean.setRowkey(new Long(i));
+
+            //mod result == 0 -> counter cols
+            //           == 1 -> normal cols
+            //           == 2 -> counter and normal cols
+            if(i%3 != 0)
+            {
+                pbean.setStrProp("str-"+i);
+                pbean.setEmbeddedProp(new EmbeddedCounterBean());
+                pbean.getEmbeddedProp().setStrProp("estr-"+i);
+            }
+            
+            if(i%3 != 1)
+            {
+                pbean.setCounterProp(new CounterColumn(i));
+                pbean.setEmbeddedProp(new EmbeddedCounterBean());
+                pbean.getEmbeddedProp().setCounterProp(new CounterColumn(i*10));
+            }
+            
+            pbeans.add(pbean);
+        }
+        
+        _counterDao.mput(beans);
+        _parentCounterDao.mput(pbeans);
+        
+        List<CounterBean> actuals = new ArrayList<CounterBean>( _counterDao.mgetAll() );
+        
+        Collections.sort(actuals);
+
+        assertEquals(beans.size(), actuals.size());
+        
+        for(int i = beans.size() - 1; i >= 0; i--)
+        {
+            CounterBean actual = actuals.get(i);
+            assertTrue(((IEnhancedEntity) actual).getModifiedFields().isEmpty());
+            assertEquals("bean[" + i + "]", beans.get(i).getRowKey(), actual.getRowKey());
+            assertEquals("bean[" + i + "]", i, actual.getCounterVal().getStored());
+        }
+        
+        /*
+         * only normal cols
+         */
+        GetAllOptions options = new GetAllOptions(Collections.singleton("strProp"), null);
+        List<ParentCounterBean> pactuals = new ArrayList<ParentCounterBean>( _parentCounterDao.mgetAll(options) );
+        
+        Collections.sort(pactuals);
+        List<ParentCounterBean> pbeans2 = new ArrayList<ParentCounterBean>();
+        for(int i = 0; i < pbeans.size(); i++)
+        {
+            if(i%3 != 0)
+                pbeans2.add(pbeans.get(i));
+        }
+        
+        assertEquals(pbeans2.size(), pactuals.size());
+        
+        for(int i = 0; i < pbeans2.size(); i++)
+        {
+            ParentCounterBean pactual = pactuals.get(i);
+            assertTrue(((IEnhancedEntity) pactual).getModifiedFields().isEmpty());
+            assertEquals("bean[" + i + "]", pbeans2.get(i).getRowkey(), pactual.getRowkey());
+            assertEquals("bean[" + i + "]", pbeans2.get(i).getStrProp(), pactual.getStrProp());
+        }
+
+        /*
+         * only counter cols
+         */
+        options = new GetAllOptions(Collections.singleton("counterProp"), null);
+        options.setGetCounterColumns();
+        pactuals = new ArrayList<ParentCounterBean>( _parentCounterDao.mgetAll(options) );
+        
+        Collections.sort(pactuals);
+        pbeans2 = new ArrayList<ParentCounterBean>();
+        for(int i = 0; i < pbeans.size(); i++)
+        {
+            if(i%3 != 1)
+                pbeans2.add(pbeans.get(i));
+        }
+        
+        assertEquals(pbeans2.size(), pactuals.size());
+        
+        for(int i = 0; i < pbeans2.size(); i++)
+        {
+            ParentCounterBean pactual = pactuals.get(i);
+            assertTrue(((IEnhancedEntity) pactual).getModifiedFields().isEmpty());
+            assertEquals("bean[" + i + "]", pbeans2.get(i).getRowkey(), pactual.getRowkey());
+            assertEquals("bean[" + i + "]", pbeans2.get(i).getRowkey(), pactual.getCounterProp().getStored());
+        }
+    }
+    
+    @Test
     public void testEmbeddedGet() throws Exception
     {
         int numBeans = 5;
@@ -1032,7 +1555,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             expected.setRowkey(bean.getRowkey());
             expected.setEmbeddedProp(bean.getEmbeddedProp());
             ParentBean actualBean = _parentBeanDao.get(i, null, options);
-            assertEquals(expected, actualBean);
+            assertEquals("bean-" + i, expected, actualBean);
 
             expected.setListProp(Arrays.asList(new EmbeddedBean[] {null, bean.getListProp().get(1)}));
             includes.add(new CollectionProperty("listProp", 1));
@@ -2188,6 +2711,97 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
     }
 
     @Test
+    public void testHashFindCounters() throws Exception
+    {
+        int numBeans = 6;
+        List<ParentCounterBean> beans = new ArrayList<ParentCounterBean>();
+        List<Long> keys = new ArrayList<Long>();
+        for(int i = 0; i < numBeans; i++)
+        {
+            ParentCounterBean bean = createParentCounterBean(i);
+            bean.setStrProp("str-" + i/3);
+            beans.add(bean);
+
+            bean = createParentCounterBean(i); //use a different bean, saving a counter resets the increment
+            bean.setStrProp("str-" + i/3);
+            _parentCounterDao.put(bean); 
+            
+            keys.add((long) i);
+        }
+
+        ParentCounterBean tmpl = new ParentCounterBean();
+        tmpl.setStrProp(beans.get(0).getStrProp());
+        
+        List<ParentCounterBean> expectedBeans = beans.subList(0, 3);
+        List<ParentCounterBean> actualBeans; 
+        
+        actualBeans = new ArrayList<ParentCounterBean>(_parentCounterDao.mfind(tmpl));
+        
+        Collections.sort(actualBeans);
+        
+        //convert counters to stored for easy comparison
+        for(int i = 0; i < numBeans; i++)
+            convertParentCounterBean(beans.get(i));
+
+
+        for(int i = 0; i < expectedBeans.size(); i++)
+        {
+            ParentCounterBean expected = expectedBeans.get(i), actual = actualBeans.get(i);
+            assertEquals("bean-" + i, expected, actual);
+        }
+
+        
+        /*
+         * range
+         */
+        actualBeans = new ArrayList<ParentCounterBean>();
+        actualBeans.addAll(_parentCounterDao.mfind(tmpl, new FindOptions(new CollectionProperty("listProp", 1), new CollectionProperty("listProp", 3))));
+
+        Collections.sort(actualBeans);
+        
+        expectedBeans = beans.subList(1, 3); //bean 0 doesn't have any elements in listProp
+        assertEquals(expectedBeans.size(), actualBeans.size());
+        for(int i = 0; i < expectedBeans.size(); i++) 
+        {
+            ParentCounterBean pbean = expectedBeans.get(i), actual = actualBeans.get(i);
+            assertEquals(pbean.getRowkey(), actual.getRowkey());
+            assertNull(actual.getCounterProp());
+            assertNull(actual.getEmbeddedProp());
+            assertNull(actual.getMapProp());
+            assertNull(actual.getStrProp());
+            if(i >= 1)
+            {
+                for(int j = 1; j <= Math.min(i, 3); j++)
+                    assertEquals(pbean.getListProp().get(j), actual.getListProp().get(j));
+            }
+        }
+        
+        /*
+         * includes/excludes
+         */
+        
+        Set<Object> includes = new HashSet<Object>();
+        includes.add("counterProp");
+        includes.add("strProp");
+        includes.add(new CollectionProperty("embeddedProp", "s"));
+        includes.add("listProp");
+
+        actualBeans = new ArrayList<ParentCounterBean>(_parentCounterDao.mfind(tmpl, new FindOptions(includes, null)));
+        expectedBeans = beans.subList(0, 3);
+        assertEquals(expectedBeans.size(), actualBeans.size());
+        
+        Collections.sort(actualBeans);
+
+        for(int i = 0; i < expectedBeans.size(); i++)
+        {
+            ParentCounterBean bean = expectedBeans.get(i), actual = actualBeans.get(i);
+            bean.getEmbeddedProp().setCounterProp(null);
+            bean.setMapProp(null);
+            assertEquals(bean, actual);
+        }
+    }
+    
+    @Test
     public void testRangeIndexUpdate() throws Exception
     {
         IndexedBean idxBean = new IndexedBean();
@@ -2648,6 +3262,25 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         }
         
         _indexedDao.mput(beans);
+        
+        //also test WAL cleaned up
+        EntityMetadata<IndexedBean> meta = new EntityMetadata<IndexedBean>(IndexedBean.class);
+        String familyName = meta.getWalFamilyName();
+        for(IndexedBean bean : beans)
+        {
+            SliceQuery<Long,byte[],byte[]> query = HFactory.createSliceQuery(_pm.createKeyspace(EConsistencyLevel.ONE), LongSerializer.get(), BytesArraySerializer.get(), BytesArraySerializer.get());
+            query.setKey(bean.getRowKey());
+            query.setColumnFamily(familyName);
+            query.setColumnNames(PutHelper.WAL_COL_NAME);
+            ColumnSlice<byte[],byte[]> slice = query.execute().get();
+            if(!slice.getColumns().isEmpty())
+            {
+                assertEquals(1, slice.getColumns().size());
+                assertNull(slice.getColumns().get(0).getValue());
+            }
+                
+        }
+        
         
         IndexedBean expected = beans.get(5);
         IndexedBean template = new IndexedBean();
