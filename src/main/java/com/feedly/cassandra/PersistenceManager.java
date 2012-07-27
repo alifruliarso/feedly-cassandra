@@ -217,52 +217,59 @@ public class PersistenceManager implements IKeyspaceFactory
             }
         }
         
+        Map<String, String> compressionOptions = null;
         if(existing == null)
         {
-            _logger.info("Column Family {} missing, creating...", familyName);
-
-            ColumnFamilyDefinition cfDef = new BasicColumnFamilyDefinition(HFactory.createColumnFamilyDefinition(_keyspace, annotation.name()));
-            if(meta.useCompositeColumns())
-            {
-                _logger.info("{}: comparator type: dynamic composite", familyName);
-                cfDef.setComparatorType(ComparatorType.DYNAMICCOMPOSITETYPE);
-                cfDef.setComparatorTypeAlias(DynamicComposite.DEFAULT_DYNAMIC_COMPOSITE_ALIASES);
-            }
-            else
-            {
-                _logger.info("{}: comparator type: UTF8", familyName);
-                cfDef.setComparatorType(ComparatorType.UTF8TYPE);
-            }
-            
             Set<String> hashIndexed = new HashSet<String>();
             Set<String> rangeIndexed = new HashSet<String>();
-            for(IndexMetadata im : meta.getIndexes())
+
+            if(meta.hasNormalColumns())
             {
-                if(im.getType() == EIndexType.HASH)
+                _logger.info("Column Family {} missing, creating...", familyName);
+                
+                ColumnFamilyDefinition cfDef = new BasicColumnFamilyDefinition(HFactory.createColumnFamilyDefinition(_keyspace, annotation.name()));
+                if(meta.useCompositeColumns())
                 {
-                    SimplePropertyMetadata pm = im.getIndexedProperties().get(0);
-                    cfDef.addColumnDefinition(createColDef(meta, familyName, pm)); //must be exactly 1 prop
-                    hashIndexed.add(pm.getPhysicalName());
+                    _logger.info("{}: comparator type: dynamic composite", familyName);
+                    cfDef.setComparatorType(ComparatorType.DYNAMICCOMPOSITETYPE);
+                    cfDef.setComparatorTypeAlias(DynamicComposite.DEFAULT_DYNAMIC_COMPOSITE_ALIASES);
                 }
                 else
                 {
-                    rangeIndexed.add(im.id());
+                    _logger.info("{}: comparator type: UTF8", familyName);
+                    cfDef.setComparatorType(ComparatorType.UTF8TYPE);
                 }
-            }
-            
-            syncRangeIndexFamilies(meta, !rangeIndexed.isEmpty(), keyspaceDef);
-            syncCounterFamily(meta, keyspaceDef);
-            cfDef.setCompressionOptions(compressionOptions(annotation));
-            _logger.info("{}: compression options: {}, hash indexed columns: {}, range indexed columns", 
-                         new Object[] {familyName, cfDef.getCompressionOptions(), hashIndexed, rangeIndexed});
-            
                 
-            _cluster.addColumnFamily(cfDef, true);
+                for(IndexMetadata im : meta.getIndexes())
+                {
+                    if(im.getType() == EIndexType.HASH)
+                    {
+                        SimplePropertyMetadata pm = im.getIndexedProperties().get(0);
+                        cfDef.addColumnDefinition(createColDef(meta, familyName, pm)); //must be exactly 1 prop
+                        hashIndexed.add(pm.getPhysicalName());
+                    }
+                    else
+                    {
+                        rangeIndexed.add(im.id());
+                    }
+                }
+                
+                syncRangeIndexFamilies(meta, !rangeIndexed.isEmpty(), keyspaceDef);
+                compressionOptions = compressionOptions(annotation);
+                cfDef.setCompressionOptions(compressionOptions);
+                
+                
+                _cluster.addColumnFamily(cfDef, true);
+            }
+            syncCounterFamily(meta, keyspaceDef);
+
+            _logger.info("{}: compression options: {}, hash indexed columns: {}, range indexed columns {}", 
+                         new Object[] {familyName, compressionOptions, hashIndexed, rangeIndexed});
         }
         else 
         {
             existing = new BasicColumnFamilyDefinition(existing);
-            Map<String, String> compressionOptions = existing.getCompressionOptions();
+            compressionOptions = existing.getCompressionOptions();
             boolean doUpdate = false;
             boolean hasRangeIndexes = false;
             
@@ -332,7 +339,7 @@ public class PersistenceManager implements IKeyspaceFactory
             }
             else //compression requested, check that options are in sync
             {
-                Map<String, String> newOpts = compressionOptions(annotation);
+                Map<String, String> newOpts = compressionOptions;
                 
                 if(!newOpts.equals(compressionOptions))
                 {

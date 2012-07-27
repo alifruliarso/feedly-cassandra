@@ -37,7 +37,8 @@ class DeleteHelper<K, V> extends DaoHelperBase<K, V>
             
             _logger.debug("deleting {}[{}]", _entityMeta.getType().getSimpleName(), key);
 
-            mutator.addDeletion(keyBytes, _entityMeta.getFamilyName());
+            if(_entityMeta.hasNormalColumns())
+                mutator.addDeletion(keyBytes, _entityMeta.getFamilyName());
             
             if(_entityMeta.hasCounterColumns())
                 mutator.addDeletion(keyBytes, _entityMeta.getCounterFamilyName());

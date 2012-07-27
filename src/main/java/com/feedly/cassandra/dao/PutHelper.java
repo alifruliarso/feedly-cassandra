@@ -182,8 +182,6 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                 {
                     SimplePropertyMetadata spm = (SimplePropertyMetadata) colMeta;
                     
-                    _logger.trace("{} = {}", new Object[] {descriptor, propVal});
-
                     if(isEmbedded)
                     {
                         colBase = new DynamicComposite(colBase);
@@ -197,6 +195,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                                 CounterColumn cc = (CounterColumn) propVal;
                                 if(cc.dirty())
                                 {
+                                    _logger.trace("{} = {}", new Object[] {descriptor, cc.getIncrement()});
                                     HCounterColumn<DynamicComposite> counterColumn = HFactory.createCounterColumn(colBase, cc.getIncrement(), SER_COMPOSITE);
                                     mutator.addCounter(keyBytes, _entityMeta.getCounterFamilyName(), counterColumn);
                                     rv.addCounter(cc);
@@ -206,6 +205,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                             }
                             else
                             {
+                                _logger.trace("{} = {}", new Object[] {descriptor, propVal});
                                 HColumn column = HFactory.createColumn(colBase, propVal, clock, SER_COMPOSITE, (Serializer) spm.getSerializer());
                                 if(spm.isTtlSet())
                                     column.setTtl(spm.ttl());
@@ -215,6 +215,8 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                         }
                         else
                         {
+                            _logger.trace("{} = {}", new Object[] {descriptor, propVal});
+
                             if(spm.hasCounter())
                                 mutator.addCounterDeletion(keyBytes, _entityMeta.getCounterFamilyName(), colBase, SER_COMPOSITE);
                             else
@@ -232,6 +234,8 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                                 CounterColumn cc = (CounterColumn) propVal;
                                 if(cc.dirty())
                                 {
+                                    _logger.trace("{} = {}", new Object[] {descriptor, cc.getIncrement()});
+
                                     HCounterColumn<byte[]> counterColumn = HFactory.createCounterColumn(colMeta.getPhysicalNameBytes(), cc.getIncrement(), SER_BYTES);
                                     mutator.addCounter(keyBytes, _entityMeta.getCounterFamilyName(), counterColumn);
                                     rv.addCounter(cc);
@@ -241,6 +245,8 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                             }
                             else
                             {
+                                _logger.trace("{} = {}", new Object[] {descriptor, propVal});
+
                                 HColumn column = HFactory.createColumn(colMeta.getPhysicalNameBytes(), propVal, clock, SER_BYTES, (Serializer) spm.getSerializer());
                                 if(spm.isTtlSet())
                                     column.setTtl(spm.ttl());
@@ -250,6 +256,8 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                         }
                         else
                         {
+                            _logger.trace("{} = {}", new Object[] {descriptor, propVal});
+
                             if(spm.hasCounter())
                                 mutator.addCounterDeletion(keyBytes, _entityMeta.getCounterFamilyName(), colMeta.getPhysicalNameBytes(), SER_BYTES);
                             else

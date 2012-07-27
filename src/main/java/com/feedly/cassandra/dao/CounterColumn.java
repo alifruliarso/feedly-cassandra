@@ -99,7 +99,7 @@ public final class CounterColumn
         if(_stored == null)
             throw new IllegalStateException("stored counter value not loaded");
         
-        return _stored + _increment;
+        return _stored + (_increment == null ? 0 : _increment);
     }
 
     void reset()

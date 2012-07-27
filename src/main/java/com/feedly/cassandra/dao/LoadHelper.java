@@ -491,7 +491,7 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
         if(pm.hasCounter())
         {
             invokeSetter(pm, value, new CounterColumn((Long) colVal, null));
-            _logger.trace("{}.{} = {}", new Object[]{descriptor, pname, value});
+            _logger.trace("{}.{} = {}", new Object[]{descriptor, pname, colVal});
         }
         else
         {

@@ -61,6 +61,7 @@ public class PersistenceManagerSchemaTest extends CassandraServiceTestBase
         Set<String> counterTables = new HashSet<String>();
         for(ColumnFamilyDefinition cfdef : cluster.describeKeyspace(KEYSPACE).getCfDefs())
         {
+            assertFalse(cfdef.getName().equals(CounterBean.class.getAnnotation(ColumnFamily.class).name()));
             if(cfdef.getName().endsWith("_cntr"))
                 counterTables.add(cfdef.getName());
         }
