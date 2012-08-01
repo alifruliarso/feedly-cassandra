@@ -44,13 +44,24 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
     
     private final GetHelper<K, V> _getHelper;
     private final IStaleIndexValueStrategy _staleValueStrategy;
-    RangeIndexFindHelper(EntityMetadata<V> meta, IKeyspaceFactory factory, IStaleIndexValueStrategy staleValueStrategy)
+    RangeIndexFindHelper(EntityMetadata<V> meta, IKeyspaceFactory factory, IStaleIndexValueStrategy staleValueStrategy, int statsSize)
     {
-        super(meta, factory);
-        _getHelper = new GetHelper<K, V>(meta, factory);
+        super(meta, factory, statsSize);
+        _getHelper = new GetHelper<K, V>(meta, factory, statsSize);
         _staleValueStrategy = staleValueStrategy;
     }
 
+    @Override
+    public OperationStatistics stats()
+    {
+        return _getHelper.stats();
+    }
+    
+    public OperationStatistics indexStats()
+    {
+        return _stats;
+    }
+    
     private V uniqueValue(Collection<V> values)
     {
         if(values == null || values.isEmpty())
@@ -73,6 +84,8 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
         RangeIndexQueryResult<K> result = findKeys(template, template, EFindOrder.NONE, options.getMaxRows(), index, options.getConsistencyLevel());
         
         IValueFilter<V> filter = new EqualityValueFilter<V>(_entityMeta, template, index);
+        
+        _stats.incrNumOps(1);
         return new LazyLoadedCollection(result, filter, options, EFindOrder.NONE, index, options.getConsistencyLevel());
     }
     
@@ -82,6 +95,8 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
         RangeIndexQueryResult<K> result = findKeys(startTemplate, endTemplate, options.getRowOrder(), options.getMaxRows(), index, options.getConsistencyLevel());
         
         IValueFilter<V> f = new RangeValueFilter<V>(_entityMeta, startTemplate, endTemplate, index);
+
+        _stats.incrNumOps(1);
         return new LazyLoadedCollection(result, f, options, options.getRowOrder(), index, options.getConsistencyLevel());
     }
 
@@ -165,14 +180,15 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
         
         if(filtered != null)
         {
+            _getHelper.stats().incrNumRows(-excludedCnt);
             _staleValueStrategy.handle(_entityMeta, index, _keyspaceFactory.createKeyspace(level), filtered);
             
-            _logger.info("filtered {} stale values from index [{}]. {} excluded, retained {}", 
-                         new Object[] { filtered.size(), index, excludedCnt, rv.size() });
+            _logger.debug("filtered {} stale values from index [{}]. {} excluded, retained {}", 
+                          new Object[] { filtered.size(), index, excludedCnt, rv.size() });
         }
         else
-            _logger.info("no stale rows filtered from index [{}]. {} excluded. retained {}", 
-                         new Object[] {index, excludedCnt, rv.size()});
+            _logger.debug("no stale rows filtered from index [{}]. {} excluded. retained {}", 
+                          new Object[] {index, excludedCnt, rv.size()});
         
         return rv;
     }
@@ -266,6 +282,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
         
         if(colOrder == EFindOrder.NONE) //can attempt to find all rows at once
         {
+            long startTime = System.nanoTime();
             MultigetSliceQuery<DynamicComposite,DynamicComposite,byte[]> multiGetQuery =
                     HFactory.createMultigetSliceQuery(_keyspaceFactory.createKeyspace(level), SER_COMPOSITE, SER_COMPOSITE, SER_BYTES);
             
@@ -274,11 +291,10 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
             Rows<DynamicComposite,DynamicComposite,byte[]> indexRows;
             multiGetQuery.setRange(startCol, endCol, false, CassandraDaoBase.COL_RANGE_SIZE);
             indexRows = multiGetQuery.execute().get();
-
+            
             boolean hasMore = false;
             rv.setPartitionPos(partitionKeys.length - 1); //init to no additional results
             int partitionIdx = 0;
-
             for(Row<DynamicComposite, DynamicComposite, byte[]> row : indexRows)
             {
                 RangeIndexQueryPartitionResult partitionResult = new RangeIndexQueryPartitionResult();
@@ -292,7 +308,6 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
                     rv.add(k, v);
                 }
 
-                
                 if(columns.size() == CassandraDaoBase.COL_RANGE_SIZE)
                 {
                     partitionResult.setHasMore(true);
@@ -320,6 +335,11 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
                 if(!hasMore)
                     rv.setPartitionPos(partitionIdx);
             }
+            
+            _stats.addRecentTiming(System.nanoTime() - startTime);
+            _stats.incrNumCassandraOps(1);
+            _stats.incrNumCols(rv.getCurrentValues().size());
+            _stats.incrNumRows(rv.getCurrentValues().size());
         }
         else 
         {
@@ -366,7 +386,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
             }
         }
 
-        _logger.info("initial fetch: index [{}] {} - {}, found {} keys", new Object[]{ index, startCol, endCol, rv.getCurrentValues().size() });  
+        _logger.debug("initial fetch: index [{}] {} - {}, found {} keys", new Object[]{ index, startCol, endCol, rv.getCurrentValues().size() });  
 
         return rv;
     }
@@ -433,13 +453,15 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
                                    int pos,
                                    EConsistencyLevel level)
     {
+        long startTime = System.nanoTime();
         List<HColumn<DynamicComposite,byte[]>> columns = executeSliceQuery(p.getPartitionKey(), 
                                                                            p.getStartCol(), 
                                                                            p.getEndCol(), 
                                                                            order,
                                                                            level); 
     
-        if(!columns.isEmpty())
+        int size = columns.size();
+        if(size > 0)
         {
             for(HColumn<DynamicComposite, byte[]> col : columns)
             {
@@ -462,16 +484,21 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
                 p.setStartCol(start);
             }
 
-            boolean hasMore = columns.size() == CassandraDaoBase.COL_RANGE_SIZE;
+            boolean hasMore = size == CassandraDaoBase.COL_RANGE_SIZE;
 
             _logger.debug("fetched {} keys from partition[{}] ({}), has more == {}", 
-                         new Object[] {columns.size(), pos, p.getPartitionKey(), hasMore});
+                         new Object[] {size, pos, p.getPartitionKey(), hasMore});
 
             p.setHasMore(hasMore);
             result.setPartitionPos(hasMore ? pos : pos+1);
         }
     
-        return columns.size();
+        _stats.addRecentTiming(System.nanoTime() - startTime);
+        _stats.incrNumCassandraOps(1);
+        _stats.incrNumCols(size);
+        _stats.incrNumRows(size);
+
+        return size;
     }
 
     private List<V> toRows(RangeIndexQueryResult<K> result, 

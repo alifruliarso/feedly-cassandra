@@ -22,13 +22,39 @@ class FindHelper<K, V> extends LoadHelper<K, V>
     private final HashIndexFindHelper<K, V> _hashIndexFinder;
     private final RangeIndexFindHelper<K, V> _rangeIndexFinder;
     
-    FindHelper(EntityMetadata<V> meta, IKeyspaceFactory factory, IStaleIndexValueStrategy staleValueStrategy)
+    FindHelper(EntityMetadata<V> meta, IKeyspaceFactory factory, IStaleIndexValueStrategy staleValueStrategy, int statsSize)
     {
-        super(meta, factory);
-        _hashIndexFinder = new HashIndexFindHelper<K, V>(meta, factory);
-        _rangeIndexFinder = new RangeIndexFindHelper<K, V>(meta, factory, staleValueStrategy);
+        super(meta, factory, 0);
+        _hashIndexFinder = new HashIndexFindHelper<K, V>(meta, factory, statsSize);
+        _rangeIndexFinder = new RangeIndexFindHelper<K, V>(meta, factory, staleValueStrategy, statsSize);
     }
     
+    @Override
+    public OperationStatistics stats()
+    {
+        throw new UnsupportedOperationException("use hash or range specific stats");
+    }
+
+    public OperationStatistics rangeFindStats()
+    {
+        return _rangeIndexFinder.stats();
+    }
+
+    public OperationStatistics rangeFindIndexStats()
+    {
+        return _rangeIndexFinder.indexStats();
+    }
+    
+    public OperationStatistics hashFindStats()
+    {
+        return _hashIndexFinder.stats();
+    }
+
+    public OperationStatistics hashFindIndexStats()
+    {
+        return _hashIndexFinder.indexStats();
+    }
+
     private IndexMetadata chooseIndex(boolean rangeOnly, V... templates) 
     {
         List<SimplePropertyMetadata> props = new ArrayList<SimplePropertyMetadata>();
@@ -88,7 +114,7 @@ class FindHelper<K, V> extends LoadHelper<K, V>
         
         if(matching != null)
         {
-            _logger.info("selected index {} [{} of {} col(s)]", new Object[] {matching, matchCnt, matching.getIndexedProperties().size()});
+            _logger.debug("selected index {} [{} of {} col(s)]", new Object[] {matching, matchCnt, matching.getIndexedProperties().size()});
             return matching;
         }
         

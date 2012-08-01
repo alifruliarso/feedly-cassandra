@@ -25,6 +25,7 @@ public class InlineRepairStrategyTest extends CassandraServiceTestBase
 {
     PersistenceManager _pm;
     IndexedBeanDao _dao;
+    private InlineRepairStrategy _strategy;
 
     @Before
     public void before()
@@ -33,8 +34,9 @@ public class InlineRepairStrategyTest extends CassandraServiceTestBase
         
         _dao = new IndexedBeanDao();
         _dao.setKeyspaceFactory(_pm);
-        InlineRepairStrategy strategy = new InlineRepairStrategy();
-        _dao.setStaleValueIndexStrategy(strategy);
+        _strategy = new InlineRepairStrategy();
+        _strategy.init();
+        _dao.setStaleValueIndexStrategy(_strategy);
         _dao.init();
         
         configurePersistenceManager(_pm);
@@ -78,6 +80,12 @@ public class InlineRepairStrategyTest extends CassandraServiceTestBase
         
         //access incorrect values to trigger repair
         _dao.mfindBetween(tmpl, endtmpl);
+
+        assertEquals(1, _strategy.stats().getNumOps());
+        assertEquals(1, _strategy.stats().getRecentTimings().length);
+        assertEquals(6, _strategy.stats().getNumCassandraOps());
+        assertEquals(6, _strategy.stats().getNumRows());
+        assertEquals(6, _strategy.stats().getNumCols());
         
         //incorrect values accessed, check repair was performed (size of index is == to row count)
         BytesArraySerializer bas = BytesArraySerializer.get();

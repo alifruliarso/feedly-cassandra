@@ -495,7 +495,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         
         SampleBean bean0 = beans.get(0);
         _dao.delete(bean0.getRowKey());
-
+        
         for(int i = 0; i < numBeans; i++)
         {
             SampleBean bean = beans.get(i);
@@ -513,7 +513,14 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             else
                 assertBean("beans[" + bean.getIntVal() + "]", bean, columnSlice);
         }
+
+        assertEquals(1, _dao.deleteStats().getNumCassandraOps());
+        assertEquals(1, _dao.deleteStats().getNumOps());
+        assertEquals(0, _dao.deleteStats().getNumCols());
+        assertEquals(1, _dao.deleteStats().getNumRows());
+        assertEquals(1, _dao.deleteStats().getRecentTimings().length);
         
+
         _dao.mdelete(Arrays.asList(beans.get(1).getRowKey(), beans.get(2).getRowKey()));
         for(int i = 0; i < numBeans; i++)
         {
@@ -532,7 +539,12 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             else
                 assertBean("beans[" + bean.getIntVal() + "]", bean, columnSlice);
         }
-        
+
+        assertEquals(3, _dao.deleteStats().getNumCassandraOps());
+        assertEquals(2, _dao.deleteStats().getNumOps());
+        assertEquals(0, _dao.deleteStats().getNumCols());
+        assertEquals(3, _dao.deleteStats().getNumRows());
+        assertEquals(2, _dao.deleteStats().getRecentTimings().length);
     }
 
     @Test
@@ -1232,15 +1244,23 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         for(SampleBean bean : beans)
             _dao.put(bean);
         
+        int expectedOps = 0;
+        assertEquals(expectedOps, _dao.getStats().getNumOps());
+        assertEquals(expectedOps, _dao.getStats().getNumCassandraOps());
         for(SampleBean bean : beans)
         {
             SampleBean loaded = _dao.get(bean.getRowKey());
+            
             assertTrue(((IEnhancedEntity) loaded).getModifiedFields().isEmpty());
             assertFalse(((IEnhancedEntity) loaded).getUnmappedFieldsModified());
             assertEquals(bean, loaded);
             assertNotNull(loaded.getUnmapped());
             assertFalse(loaded.getUnmapped().isEmpty());
             
+            assertEquals(++expectedOps, _dao.getStats().getNumOps());
+            assertEquals(110*expectedOps, _dao.getStats().getNumCols());
+            assertEquals(2*expectedOps, _dao.getStats().getNumCassandraOps()); //large number of unmapped cols requires addl slice query per row
+            assertEquals(expectedOps, _dao.getStats().getRecentTimings().length);
         }
         
         SampleBean bean0 = beans.get(0);
@@ -1280,7 +1300,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         int numBeans = 5;
         List<SampleBean> beans = new ArrayList<SampleBean>();
         List<Long> keys = new ArrayList<Long>();
-        
+
         for(int i = 0; i < numBeans; i++)
         {
             SampleBean bean = new SampleBean();
@@ -1321,8 +1341,13 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
                 loaded.setUnmapped(new TreeMap<String, Object>(loaded.getUnmapped()));
             
             assertEquals("bean[" + i + "]", beans.get(i), loaded);
-
         }
+        
+        assertEquals(1, _dao.getStats().getNumOps());
+        assertEquals(6, _dao.getStats().getNumCassandraOps());
+        assertEquals(numBeans*110, _dao.getStats().getNumCols());
+        assertEquals(numBeans+1, _dao.getStats().getNumRows());
+        assertEquals(1, _dao.getStats().getRecentTimings().length);
     }
 
     @Test
@@ -1624,6 +1649,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         }
         
         _mapDao.mput(beans);
+        int expectedOps = 0;
         
         for(MapBean bean : beans)
         {
@@ -1634,6 +1660,10 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             assertNotNull(loaded.getUnmapped());
             assertFalse(loaded.getUnmapped().isEmpty());
             
+            assertEquals(++expectedOps, _mapDao.getStats().getNumOps());
+            assertEquals(303*expectedOps, _mapDao.getStats().getNumCols());
+            assertEquals(4*expectedOps, _mapDao.getStats().getNumCassandraOps()); 
+            assertEquals(expectedOps, _mapDao.getStats().getRecentTimings().length);
         }
         
         
@@ -1757,12 +1787,17 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         }
         
         _listDao.mput(beans);
-        
+        int expectedOps = 0;
         for(ListBean bean : beans)
         {
             ListBean loaded = _listDao.get(bean.getRowkey());
             assertTrue(((IEnhancedEntity) loaded).getModifiedFields().isEmpty());
             assertEquals(bean, loaded);
+
+            assertEquals(++expectedOps, _listDao.getStats().getNumOps());
+            assertEquals(102*expectedOps, _listDao.getStats().getNumCols());
+            assertEquals(2*expectedOps, _listDao.getStats().getNumCassandraOps()); //large number of unmapped cols requires addl slice query per row
+            assertEquals(expectedOps, _listDao.getStats().getRecentTimings().length);
         }
 
         /*
@@ -1865,7 +1900,14 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         }
         
         _nestedBeanDao.mput(beans);
-        
+
+        assertEquals(1, _nestedBeanDao.putStats().getNumOps());
+        assertEquals((35+35+35+35+35*3+35*3)*numBeans, _nestedBeanDao.putStats().getNumCols());
+        assertEquals((35+35+35+35+35*3+35*3)*numBeans, _nestedBeanDao.putStats().getNumCassandraOps());
+        assertEquals(numBeans, _nestedBeanDao.putStats().getNumRows());
+        assertEquals(1, _nestedBeanDao.putStats().getRecentTimings().length);
+
+        int expectedOps = 0;
         for(int i = 0; i < numBeans; i++)
         {
             NestedBean actual = _nestedBeanDao.get((long) i);
@@ -1881,7 +1923,13 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
 
             
             //this is actually sufficient, previous are to aid debugging inequalities
-            assertEquals("key " + expected.getRowkey(), expected, actual); 
+            assertEquals("key " + expected.getRowkey(), expected, actual);
+            
+            assertEquals(++expectedOps, _nestedBeanDao.getStats().getNumOps());
+            assertEquals((35+35+35+35+35*3+35*3)*expectedOps, _nestedBeanDao.getStats().getNumCols());
+            assertEquals(4*expectedOps, _nestedBeanDao.getStats().getNumCassandraOps()); //large number of unmapped cols requires addl slice query per row
+            assertEquals(expectedOps, _nestedBeanDao.getStats().getRecentTimings().length);
+
         }
         
         List<NestedBean> actual = new ArrayList<NestedBean>(_nestedBeanDao.mget(keys));
@@ -2350,7 +2398,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         options.setMaxRows(5); //ensure max rows honored
         assertEquals(5, _indexedDao.mfind(idxTmpl, options).size());
 
-        options.setMaxRows(CassandraDaoBase.ROW_RANGE_SIZE*2); //ensure max rows honored
+        options.setMaxRows(CassandraDaoBase.ROW_RANGE_SIZE*2); 
         assertEquals(10, _indexedDao.mfind(idxTmpl, options).size());
 
         
@@ -2363,15 +2411,43 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         for(CompositeIndexedBean cIdxBean : cIdxActuals)
             assertTrue(((IEnhancedEntity) cIdxBean).getModifiedFields().isEmpty());
 
+        _indexedDao.hashFindStats().reset();
+        _indexedDao.hashFindIndexStats().reset();
         
         idxTmpl = new IndexedBean();
         idxTmpl.setStrVal("strval");
         Collection<IndexedBean> actualColl = _indexedDao.mfind(idxTmpl);
         idxActuals = new ArrayList<IndexedBean>();
 
+        assertEquals(1, _indexedDao.hashFindStats().getNumOps());
+        assertEquals(0, _indexedDao.hashFindStats().getNumCassandraOps());
+        assertEquals(CassandraDaoBase.ROW_RANGE_SIZE*5, _indexedDao.hashFindStats().getNumCols());
+        assertEquals(CassandraDaoBase.ROW_RANGE_SIZE, _indexedDao.hashFindStats().getNumRows());
+        assertEquals(1, _indexedDao.hashFindStats().getRecentTimings().length);
+
+        assertEquals(1, _indexedDao.hashFindIndexStats().getNumOps());
+        assertEquals(1, _indexedDao.hashFindIndexStats().getNumCassandraOps());
+        assertEquals(0, _indexedDao.hashFindIndexStats().getNumCols());
+        assertEquals(CassandraDaoBase.ROW_RANGE_SIZE, _indexedDao.hashFindIndexStats().getNumRows());
+        assertEquals(1, _indexedDao.hashFindIndexStats().getRecentTimings().length);
+        
         for(IndexedBean b : actualColl) //test incremental iteration rather than all() method
             idxActuals.add(b);
-            
+
+        assertEquals(1, _indexedDao.hashFindStats().getNumOps());
+        assertEquals(0, _indexedDao.hashFindStats().getNumCassandraOps());
+        assertEquals(numBeans*5, _indexedDao.hashFindStats().getNumCols());
+        assertEquals(numBeans, _indexedDao.hashFindStats().getNumRows());
+        assertEquals(3, _indexedDao.hashFindStats().getRecentTimings().length);
+
+        assertEquals(1, _indexedDao.hashFindIndexStats().getNumOps());
+        assertEquals(3, _indexedDao.hashFindIndexStats().getNumCassandraOps());
+        assertEquals(0, _indexedDao.hashFindIndexStats().getNumCols());
+        assertEquals(numBeans, _indexedDao.hashFindIndexStats().getNumRows());
+        assertEquals(3, _indexedDao.hashFindIndexStats().getRecentTimings().length);
+
+        
+        
         Collections.sort(idxActuals);
         assertBeansEqual(idxBeans, idxActuals);
         for(IndexedBean idxBean : idxActuals)
@@ -2881,6 +2957,12 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         _indexedDao.mput(idxBeans);
         _compositeIndexedDao.mput(cIdxBeans);
         
+        assertEquals(1, _indexedDao.putIndexStats().getNumOps());
+        assertEquals(3*numBeans, _indexedDao.putIndexStats().getNumCols());
+        assertEquals(3*numBeans+2, _indexedDao.putIndexStats().getNumCassandraOps());
+        assertEquals(numBeans, _indexedDao.putIndexStats().getNumRows());
+
+        
         IndexedBean idxTmpl = new IndexedBean();
         idxTmpl.setLongVal(5L);
         List<IndexedBean> idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl));
@@ -2999,7 +3081,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
     @Test
     public void testRangeFindPartial() throws Exception
     {
-        int numBeans = 1 + CassandraDaoBase.COL_RANGE_SIZE * 3;//force dao to do multiple ranges
+        int numBeans = 1 + CassandraDaoBase.ROW_RANGE_SIZE * 3;//force dao to do multiple ranges
         List<IndexedBean> idxBeans = new ArrayList<IndexedBean>();
         for(int i = 0; i < numBeans; i++)
         {
@@ -3019,7 +3101,34 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
 
         IndexedBean idxTmpl = new IndexedBean();
         idxTmpl.setLongVal(2L);
-        List<IndexedBean> idxActuals = new ArrayList<IndexedBean>(_indexedDao.mfind(idxTmpl, new FindOptions(Collections.singleton("intVal"), null)));
+        Collection<IndexedBean> collection = _indexedDao.mfind(idxTmpl, new FindOptions(Collections.singleton("intVal"), null));
+        
+        assertEquals(1, _indexedDao.rangeFindStats().getNumOps());
+        assertEquals(1, _indexedDao.rangeFindStats().getNumCassandraOps());
+        assertEquals(2*CassandraDaoBase.ROW_RANGE_SIZE, _indexedDao.rangeFindStats().getNumCols());
+        assertEquals(CassandraDaoBase.ROW_RANGE_SIZE, _indexedDao.rangeFindStats().getNumRows());
+        assertEquals(1, _indexedDao.rangeFindStats().getRecentTimings().length);
+
+        assertEquals(1, _indexedDao.rangeFindIndexStats().getNumOps());
+        assertEquals(1, _indexedDao.rangeFindIndexStats().getNumCassandraOps());
+        assertEquals(CassandraDaoBase.ROW_RANGE_SIZE, _indexedDao.rangeFindIndexStats().getNumCols());
+        assertEquals(CassandraDaoBase.ROW_RANGE_SIZE, _indexedDao.rangeFindIndexStats().getNumRows());
+        assertEquals(1, _indexedDao.rangeFindIndexStats().getRecentTimings().length);
+        
+        List<IndexedBean> idxActuals = new ArrayList<IndexedBean>(collection);
+
+        assertEquals(2, _indexedDao.rangeFindStats().getNumOps());
+        assertEquals(2, _indexedDao.rangeFindStats().getNumCassandraOps());
+        assertEquals(2*(CassandraDaoBase.ROW_RANGE_SIZE+1), _indexedDao.rangeFindStats().getNumCols());
+        assertEquals(CassandraDaoBase.ROW_RANGE_SIZE+1, _indexedDao.rangeFindStats().getNumRows());
+        assertEquals(2, _indexedDao.rangeFindStats().getRecentTimings().length);
+
+        assertEquals(1, _indexedDao.rangeFindIndexStats().getNumOps());
+        assertEquals(2, _indexedDao.rangeFindIndexStats().getNumCassandraOps());
+        assertEquals(CassandraDaoBase.ROW_RANGE_SIZE+1, _indexedDao.rangeFindIndexStats().getNumCols());
+        assertEquals(CassandraDaoBase.ROW_RANGE_SIZE+1, _indexedDao.rangeFindIndexStats().getNumRows());
+        assertEquals(2, _indexedDao.rangeFindIndexStats().getRecentTimings().length);
+
         List<IndexedBean> idxExpecteds = new ArrayList<IndexedBean>();
 
         Collections.sort(idxActuals);

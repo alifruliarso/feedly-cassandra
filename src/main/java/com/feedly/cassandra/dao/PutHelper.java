@@ -41,11 +41,19 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
     static final byte[] WAL_COL_NAME = StringSerializer.get().toBytes("rowkey"); 
     static final byte[] IDX_COL_VAL = new byte[] {0}; 
 
-    PutHelper(EntityMetadata<V> meta, IKeyspaceFactory factory)
+    private OperationStatistics _indexStats;
+    
+    PutHelper(EntityMetadata<V> meta, IKeyspaceFactory factory, int statsSize)
     {
-        super(meta, factory);
+        super(meta, factory, statsSize);
+        _indexStats = new OperationStatistics(0);
     }
 
+    public OperationStatistics indexStats()
+    {
+        return _indexStats;
+    }
+    
     public void put(V value, PutOptions options)
     {
         mput(Collections.singleton(value), options);
@@ -53,6 +61,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
 
     public void mput(Collection<V> values, PutOptions options)
     {
+        long startTime = System.nanoTime();
         SimplePropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
         Keyspace keyspace = _keyspaceFactory.createKeyspace(null);
         Mutator<byte[]> mutator = HFactory.createMutator(keyspace, SER_BYTES);
@@ -145,7 +154,21 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
             resetEntities(overallStatus.savedEntities);
         }
         
-        _logger.info("inserted {} values into {}", values.size(), _entityMeta.getType().getSimpleName());
+        _stats.addRecentTiming(System.nanoTime() - startTime);
+        _stats.incrNumCassandraOps(overallStatus.updateCnt);
+        _stats.incrNumRows(values.size());
+        _stats.incrNumCols(overallStatus.updateCnt);
+        _stats.incrNumOps(1);
+
+        if(overallStatus.indexUpdateCnt > 0)
+        {
+            _indexStats.incrNumCassandraOps(overallStatus.indexUpdateCnt+2); //+2 for wal writes
+            _indexStats.incrNumRows(overallStatus.indexEntityCnt);
+            _indexStats.incrNumCols(overallStatus.indexUpdateCnt);
+            _indexStats.incrNumOps(1);
+        }
+        
+        _logger.debug("inserted {} values into {}", values.size(), _entityMeta.getType().getSimpleName());
     }
 
     //rv[0] = total col cnt, rv[1] = range index update count
@@ -264,14 +287,19 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                                 mutator.addDeletion(keyBytes, _entityMeta.getFamilyName(), colMeta.getPhysicalNameBytes(), SER_BYTES, clock);
                         }
                     
+                        boolean indexed = false;
                         for(IndexMetadata idxMeta : _entityMeta.getIndexes((SimplePropertyMetadata) colMeta))
                         {
                             if(idxMeta.getType() == EIndexType.RANGE && affectedIndexes.add(idxMeta))
                             {
                                 addIndexWrite(key, entityValue, dirty, idxMeta, clock, mutator, level);
                                 rv.indexUpdateCnt++;
+                                indexed = true;
                             }
                         }
+                        
+                        if(indexed)
+                            rv.indexEntityCnt++;
                     }
 
                     rv.updateCnt++;
@@ -722,12 +750,14 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
     {
         int updateCnt;
         int indexUpdateCnt;
+        int indexEntityCnt;
         List<Object> savedEntities;
         List<CounterColumn> savedCounters;
         
         SaveStatus merge(SaveStatus other)
         {
             updateCnt += other.updateCnt;
+            indexEntityCnt += other.indexEntityCnt;
             indexUpdateCnt += other.indexUpdateCnt;
             if(savedEntities == null && other.savedEntities != null)
                 savedEntities = other.savedEntities;

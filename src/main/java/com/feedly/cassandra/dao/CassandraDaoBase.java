@@ -1,9 +1,14 @@
 package com.feedly.cassandra.dao;
 
+import java.lang.management.ManagementFactory;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.Collection;
 import java.util.List;
+
+import javax.management.MBeanServer;
+import javax.management.MalformedObjectNameException;
+import javax.management.ObjectName;
 
 import me.prettyprint.hector.api.Keyspace;
 
@@ -34,12 +39,14 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     static final int ROW_RANGE_SIZE = 100;
     private final EntityMetadata<V> _entityMeta;
     private final EConsistencyLevel _defaultConsistency;
+    
     private GetHelper<K, V> _getHelper;
     private FindHelper<K, V> _findHelper;
     private PutHelper<K, V> _putHelper;
     private DeleteHelper<K, V> _deleteHelper;
     private IKeyspaceFactory _keyspaceFactory;
     private IStaleIndexValueStrategy _staleIndexValueStrategy;
+    private int _statsSize = MBeanUtils.DEFAULT_STATS_SIZE;
     
     protected CassandraDaoBase()
     {
@@ -66,7 +73,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         }
 
         _defaultConsistency = defaultConsistency != null ? defaultConsistency : EConsistencyLevel.QUOROM;
-
+        
         _entityMeta = new EntityMetadata<V>(valueClass);
 
         if(!keyClassMatches(_entityMeta.getKeyMetadata().getFieldType(), keyClass))
@@ -79,6 +86,11 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         _logger.info("{} [{}]:\n{}", new Object[] {getClass().getSimpleName(), _entityMeta.getFamilyName(), _entityMeta.toString()});
     }
 
+    public void setStatsSize(int s)
+    {
+        _statsSize = s;
+    }
+
     public void setKeyspaceFactory(IKeyspaceFactory keyspaceFactory)
     {
         _keyspaceFactory = keyspaceFactory;
@@ -87,6 +99,11 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     public void setStaleValueIndexStrategy(IStaleIndexValueStrategy strategy)
     {
         _staleIndexValueStrategy = strategy;
+    }
+    
+    public void destroy()
+    {
+        unregisterMBeans();
     }
     
     public void init()
@@ -119,10 +136,71 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
                 }
             };
         
-        _getHelper = new GetHelper<K, V>(_entityMeta, withDefault);
-        _findHelper = new FindHelper<K, V>(_entityMeta, withDefault, _staleIndexValueStrategy);
-        _putHelper = new PutHelper<K, V>(_entityMeta, withDefault);
-        _deleteHelper = new DeleteHelper<K, V>(_entityMeta, withDefault);
+        _getHelper = new GetHelper<K, V>(_entityMeta, withDefault, _statsSize);
+        _findHelper = new FindHelper<K, V>(_entityMeta, withDefault, _staleIndexValueStrategy, _statsSize);
+        _putHelper = new PutHelper<K, V>(_entityMeta, withDefault, _statsSize);
+        _deleteHelper = new DeleteHelper<K, V>(_entityMeta, withDefault, _statsSize);
+        registerMBeans();
+    }
+
+    
+    private ObjectName mBeanName(String name) throws MalformedObjectNameException
+    {
+        return MBeanUtils.mBeanName(this, _entityMeta.getType().getSimpleName(), name);
+    }
+    
+    private void registerMBeans()
+    {
+        MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
+
+        try 
+        {
+            mbs.registerMBean(new OperationStatisticsMonitor(getStats()), mBeanName("getStats"));
+            
+            mbs.registerMBean(new OperationStatisticsMonitor(deleteStats()), mBeanName("deleteStats"));
+            
+            mbs.registerMBean(new OperationStatisticsMonitor(putStats()), mBeanName("putStats"));
+            mbs.registerMBean(new OperationStatisticsMonitor(putIndexStats()), mBeanName("putIdxStats"));
+
+            mbs.registerMBean(new OperationStatisticsMonitor(hashFindStats()), mBeanName("hashFindStats"));
+            mbs.registerMBean(new OperationStatisticsMonitor(hashFindIndexStats()), mBeanName("hashFindIdxStats"));
+            
+            mbs.registerMBean(new OperationStatisticsMonitor(rangeFindStats()), mBeanName("rangeFindStats"));
+            mbs.registerMBean(new OperationStatisticsMonitor(rangeFindIndexStats()), mBeanName("rangeFindIdxStats"));
+            
+            _logger.info("monitoring registration complete for {}", getClass().getSimpleName());
+        } 
+        catch(Exception e) 
+        {
+            _logger.warn("error registering mbeans", e);
+        }
+    }
+
+    private void unregisterMBeans()
+    {
+        MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
+        
+        try 
+        {
+            mbs.unregisterMBean(mBeanName("getStats"));
+
+            mbs.unregisterMBean(mBeanName("deleteStats"));
+            
+            mbs.unregisterMBean(mBeanName("putStats"));
+            mbs.unregisterMBean(mBeanName("putIdxStats"));
+
+            mbs.unregisterMBean(mBeanName("hashFindStats"));
+            mbs.unregisterMBean(mBeanName("hashFindIdxStats"));
+            
+            mbs.unregisterMBean(mBeanName("rangeFindStats"));
+            mbs.unregisterMBean(mBeanName("rangeFindIdxStats"));
+
+            _logger.info("monitoring unregistration complete for {}", getClass().getSimpleName());
+        } 
+        catch(Exception e) 
+        {
+            _logger.warn("error unregistering mbeans", e);
+        }
     }
     
     private boolean keyClassMatches(Class<?> fieldType, Class<?> keyType)
@@ -333,5 +411,45 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
             options = new DeleteOptions();
         
         _deleteHelper.mdelete(keys, options);
+    }
+    
+    public OperationStatistics getStats()
+    {
+        return _getHelper.stats();
+    }
+
+    public OperationStatistics deleteStats()
+    {
+        return _deleteHelper.stats();
+    }
+
+    public OperationStatistics putStats()
+    {
+        return _putHelper.stats();
+    }
+    
+    public OperationStatistics putIndexStats()
+    {
+        return _putHelper.indexStats();
+    }
+
+    public OperationStatistics hashFindStats()
+    {
+        return _findHelper.hashFindStats();
+    }
+    
+    public OperationStatistics hashFindIndexStats()
+    {
+        return _findHelper.hashFindIndexStats();
+    }
+    
+    public OperationStatistics rangeFindStats()
+    {
+        return _findHelper.rangeFindStats();
+    }
+    
+    public OperationStatistics rangeFindIndexStats()
+    {
+        return _findHelper.rangeFindIndexStats();
     }
 }

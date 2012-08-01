@@ -32,16 +32,25 @@ abstract class DaoHelperBase<K,V>
 
     protected final EntityMetadata<V> _entityMeta;
     protected final IKeyspaceFactory _keyspaceFactory;
-
-    DaoHelperBase(EntityMetadata<V> meta, IKeyspaceFactory factory)
+    protected final OperationStatistics _stats;
+    protected final int _statsSize;
+    
+    DaoHelperBase(EntityMetadata<V> meta, IKeyspaceFactory factory, int statsSize)
     {
         _entityMeta = meta;
         _keyspaceFactory = factory;
+        _stats = new OperationStatistics(statsSize);
+        _statsSize = statsSize;
     }
     
     protected static boolean isSimpleProp(PropertyMetadataBase pmb)
     {
         return pmb.getPropertyType() == EPropertyType.SIMPLE;
+    }
+    
+    public OperationStatistics stats()
+    {
+        return _stats;
     }
     
     /**

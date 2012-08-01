@@ -26,9 +26,12 @@ import com.feedly.cassandra.entity.SimplePropertyMetadata;
  */
 class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
 {
-    HashIndexFindHelper(EntityMetadata<V> meta, IKeyspaceFactory factory)
+    private OperationStatistics _indexStats;
+
+    HashIndexFindHelper(EntityMetadata<V> meta, IKeyspaceFactory factory, int statsSize)
     {
-        super(meta, factory);
+        super(meta, factory, statsSize);
+        _indexStats = new OperationStatistics(statsSize);
     }
 
     private V uniqueValue(Collection<V> values)
@@ -42,6 +45,11 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
         return values.iterator().next();
     }
     
+    public OperationStatistics indexStats()
+    {
+        return _indexStats;
+    }
+    
     public V find(V template, FindOptions options, IndexMetadata index)
     {
         return uniqueValue(mfind(template, options, index));
@@ -50,19 +58,27 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
 
     public Collection<V> mfind(V template, FindOptions options, IndexMetadata index)
     {
+        Collection<V> values = null;
         switch(options.getColumnFilterStrategy())
         {
             case UNFILTERED:
-                return bulkFindByIndexPartial(template, null, null, null, null, null, options.getMaxRows(), index, options.getConsistencyLevel());
+                values = bulkFindByIndexPartial(template, null, null, null, null, null, options.getMaxRows(), index, options.getConsistencyLevel());
+                break;
+            
             case RANGE:
                 byte[] startCol = propertyName(options.getStartColumn(), ComponentEquality.EQUAL);
                 byte[] endCol = propertyName(options.getEndColumn(), ComponentEquality.GREATER_THAN_EQUAL);
-                return bulkFindByIndexPartial(template, startCol, endCol, null, null, null, options.getMaxRows(), index, options.getConsistencyLevel());
+                values =  bulkFindByIndexPartial(template, startCol, endCol, null, null, null, options.getMaxRows(), index, options.getConsistencyLevel());
+                break;
+            
             case INCLUDES:
-                return mfind(template, options.getIncludes(), options.getExcludes(), options.getMaxRows(), index, options.getConsistencyLevel());
+                values = mfind(template, options.getIncludes(), options.getExcludes(), options.getMaxRows(), index, options.getConsistencyLevel());
+                break;
         }
         
-        throw new IllegalStateException(); //never happens
+        _stats.incrNumOps(1);
+        _indexStats.incrNumOps(1);
+        return values;
     }
 
     private Collection<V> mfind(V template, Set<? extends Object> includes, Set<String> excludes, int maxRows, IndexMetadata index, EConsistencyLevel level)
@@ -130,6 +146,8 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
                               List<CollectionRange> ranges,
                               EConsistencyLevel level)
     {
+        long indexStartTime = System.nanoTime();
+        
         SimplePropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
         int fetchRowCount = Math.min(maxRows, CassandraDaoBase.ROW_RANGE_SIZE);
         query.setRowCount(fetchRowCount);
@@ -138,6 +156,8 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
             query.setStartKey(startRowKey);
 
         OrderedRows<byte[],byte[],byte[]> rows = query.execute().get();
+        long indexEndTime = System.nanoTime();
+        long startTime = indexEndTime;
         List<K> keys = new ArrayList<K>();
         
         K first = null, last = null;
@@ -196,7 +216,15 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
                 nonNull++;
         }
 
-        _logger.info("{} rows, {} values, ({} non null) fetched", new Object[] {cnt, values.size(), nonNull});
+        int size = values.size();
+        
+        _stats.addRecentTiming(System.nanoTime() - startTime);
+        _indexStats.addRecentTiming(indexEndTime - indexStartTime);
+        _stats.incrNumRows(size);
+        _indexStats.incrNumRows(size);
+        _indexStats.incrNumCassandraOps(1);
+        
+        _logger.info("{} rows, {} values, ({} non null) fetched", new Object[] {cnt, size, nonNull});
 
         return lastKeyBytes;
     }

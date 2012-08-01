@@ -42,9 +42,9 @@ import com.feedly.cassandra.entity.SimplePropertyMetadata;
 abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
 {
 
-    LoadHelper(EntityMetadata<V> meta, IKeyspaceFactory factory)
+    LoadHelper(EntityMetadata<V> meta, IKeyspaceFactory factory, int statsSize)
     {
-        super(meta, factory);
+        super(meta, factory, statsSize);
     }
     
     @SuppressWarnings("unchecked")
@@ -122,7 +122,6 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
 
         entities.add(value);
         resetEntities(entities);
-        
         
         return value;
     }
@@ -548,8 +547,11 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
         List<HColumn<byte[], byte[]>> columns = slice.getColumns();
         byte[] firstCol = null;
         boolean hasMore = true;
+        
+        int cnt = 0;
         while(hasMore)
         {
+            cnt += columns.size();
             value = loadValueProperties(key, value, keyMeta, columns);
          
             hasMore = columns.size() >= CassandraDaoBase.COL_RANGE_SIZE - 1; 
@@ -563,10 +565,13 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
                 
                 query.setRange(firstCol, rangeEnd, false, CassandraDaoBase.COL_RANGE_SIZE);
                 columns = query.execute().get().getColumns();
-                
                 columns = columns.subList(1, columns.size()); //boundaries are inclusive, exclude previously processed column
+                _stats.incrNumCassandraOps(1);
             }
         }
+        
+        _stats.incrNumCols(cnt);
+        
         return value;
     }
     
@@ -590,8 +595,10 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
         List<HCounterColumn<byte[]>> columns = slice.getColumns();
         byte[] firstCol = null;
         boolean hasMore = true;
+        int cnt = 0;
         while(hasMore)
         {
+            cnt += columns.size();
             value = loadCounterValueProperties(key, value, keyMeta, columns);
             
             hasMore = columns.size() >= CassandraDaoBase.COL_RANGE_SIZE - 1; 
@@ -605,10 +612,13 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
                 
                 query.setRange(firstCol, rangeEnd, false, CassandraDaoBase.COL_RANGE_SIZE);
                 columns = query.execute().get().getColumns();
-                
                 columns = columns.subList(1, columns.size()); //boundaries are inclusive, exclude previously processed column
+                _stats.incrNumCassandraOps(1);
             }
         }
+        
+        _stats.incrNumCols(cnt);
+
         return value;
     }
 
@@ -745,7 +755,13 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
      * @return the updated values
      */
     @SuppressWarnings({ "rawtypes", "unchecked" })
-    protected List<V> bulkLoadFromMultiGet(Collection<K> keys, List<V> values, List<byte[]> colNames, byte[] first, byte[] last, boolean maintainOrder, EConsistencyLevel level)
+    protected List<V> bulkLoadFromMultiGet(Collection<K> keys, 
+                                           List<V> values, 
+                                           List<byte[]> colNames, 
+                                           byte[] first, 
+                                           byte[] last, 
+                                           boolean maintainOrder, 
+                                           EConsistencyLevel level)
     {
         if(!(keys instanceof Set))
         {
@@ -778,6 +794,7 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
         else
             query.setRange(first, last, false, CassandraDaoBase.COL_RANGE_SIZE);
             
+        _stats.incrNumCassandraOps(1);
         Rows<byte[], byte[], byte[]> rows = query.execute().get();
 
         Map<K, Integer> pos = null;
@@ -866,6 +883,7 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
         else
             query.setRange(first, last, false, CassandraDaoBase.COL_RANGE_SIZE);
         
+        _stats.incrNumCassandraOps(1);
         CounterRows<byte[], byte[]> rows = query.execute().get();
         
         Map<K, Integer> pos = null;

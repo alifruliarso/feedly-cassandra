@@ -33,20 +33,22 @@ import com.feedly.cassandra.entity.SimplePropertyMetadata;
  */
 class GetHelper<K, V> extends LoadHelper<K, V>
 {
-    GetHelper(EntityMetadata<V> meta, IKeyspaceFactory factory)
+    GetHelper(EntityMetadata<V> meta, IKeyspaceFactory factory, int statsSize)
     {
-        super(meta, factory);
+        super(meta, factory, statsSize);
     }
 
     public V get(K key, V value, GetOptions options)
     {
         EConsistencyLevel c = options.getConsistencyLevel();
 
+        V row = value;
+        long startTiming = System.nanoTime();
         switch(options.getColumnFilterStrategy())
         {
             case UNFILTERED:
             case RANGE:
-                V row = value;
+                row = value;
                 byte[] start = null; 
                 byte[] end = null; 
 
@@ -61,14 +63,17 @@ class GetHelper<K, V> extends LoadHelper<K, V>
                 
                 if(_entityMeta.hasCounterColumns())
                     row = loadFromCounterGet(key, row, null, start, end, c);
-                
-                return row;
+                break;
                 
             case INCLUDES:
-                return get(key, value, options.getIncludes(), options.getExcludes(), c);
+                row = get(key, value, options.getIncludes(), options.getExcludes(), c);
         }
+
+        _stats.incrNumRows(1);
+        _stats.incrNumOps(1);
+        _stats.addRecentTiming(System.nanoTime() - startTiming);
         
-        throw new IllegalStateException(); //never happens
+        return row;
     }
 
     private V get(K key, V value, Set<? extends Object> includes, Set<String> excludes, EConsistencyLevel level)
@@ -111,6 +116,7 @@ class GetHelper<K, V> extends LoadHelper<K, V>
 
     public List<V> mget(Collection<K> keys)
     {
+        long startTime = System.nanoTime();
         List<V> values = null;
         
         if(_entityMeta.hasNormalColumns())
@@ -119,11 +125,18 @@ class GetHelper<K, V> extends LoadHelper<K, V>
         if(_entityMeta.hasCounterColumns())
             values = bulkLoadFromMultiCounterGet(keys, values, null, null, null, _entityMeta.hasNormalColumns(), null);
         
+        
+        _stats.incrNumRows(keys.size());
+        _stats.incrNumOps(1);
+        _stats.addRecentTiming(System.nanoTime()-startTime);
+        
         return values;
     }
 
     public List<V> mget(List<K> keys, List<V> values, GetOptions options)
     {
+        long startTime = System.nanoTime();
+
         if(keys == null)
             throw new IllegalArgumentException("keys parameter is null");
         if(values != null && keys.size() != values.size())
@@ -148,17 +161,22 @@ class GetHelper<K, V> extends LoadHelper<K, V>
                 if(_entityMeta.hasCounterColumns())
                     values = bulkLoadFromMultiCounterGet(keys, values, null, start, end, true, c);
                 
-                return values;
-
+                break;
+                
             case INCLUDES:
-                return mget(keys, values, options.getIncludes(), options.getExcludes(), c);
+                values = mget(keys, values, options.getIncludes(), options.getExcludes(), c);
         }
 
-        throw new IllegalStateException(); //never happens
+        _stats.incrNumRows(keys.size());
+        _stats.incrNumOps(1);
+        _stats.addRecentTiming(System.nanoTime()-startTime);
+        
+        return values;
     }
     
     public Collection<V> mgetAll(GetAllOptions options)
     {
+        _stats.incrNumOps(1);
         return new LazyLoadedCollection(options);
     }
     
@@ -205,7 +223,9 @@ class GetHelper<K, V> extends LoadHelper<K, V>
             query.setColumnNames(cols.toArray(new byte[cols.size()][]));
         else
             query.setRange(from, to, false, CassandraDaoBase.COL_RANGE_SIZE);
-
+        
+        _stats.incrNumCassandraOps(1);
+        
         return fromColumnSlice(key, value, keyMeta, keyBytes, query, query.execute().get(), to, level);
     }
 
@@ -224,12 +244,15 @@ class GetHelper<K, V> extends LoadHelper<K, V>
         else
             query.setRange(from, to, false, CassandraDaoBase.COL_RANGE_SIZE);
         
+        _stats.incrNumCassandraOps(1);
+
         return fromCounterColumnSlice(key, value, keyMeta, keyBytes, query, query.execute().get(), to, level);
     }
     
     @SuppressWarnings({ "unchecked", "rawtypes" })
     private byte[] fetch(Query<?> q, byte[] start, GetOptions options, List<V> values)
     {
+        long startTime = System.nanoTime();
         List<K> keys = null;
         List<CollectionRange> ranges = null;
         values.clear();
@@ -303,6 +326,8 @@ class GetHelper<K, V> extends LoadHelper<K, V>
         else
             cresult = cquery.execute();
         
+        _stats.incrNumCassandraOps(1);
+        
         SimplePropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
         boolean checkStart = true;
 
@@ -344,9 +369,12 @@ class GetHelper<K, V> extends LoadHelper<K, V>
         }
         
         int cnt = result != null ? result.get().getCount() : cresult.get().getCount();
-        
+
+        _stats.addRecentTiming(System.nanoTime() - startTime);
         if(cnt == 0 || (start != null && cnt == 1))
             return null;
+        
+        _stats.incrNumRows(values.size());
         
         if(ranges != null)
         {

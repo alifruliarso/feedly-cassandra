@@ -339,7 +339,7 @@ public class PersistenceManager implements IKeyspaceFactory
             }
             else //compression requested, check that options are in sync
             {
-                Map<String, String> newOpts = compressionOptions;
+                Map<String, String> newOpts = compressionOptions(annotation);
                 
                 if(!newOpts.equals(compressionOptions))
                 {
