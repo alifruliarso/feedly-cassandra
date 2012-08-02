@@ -3293,6 +3293,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
     public void testManyPartitions() throws Exception
     {
         TestPartitioner.partitionHistory().clear();
+        TestPartitioner.rangePartitionHistory().clear();
         PartitionIndexBeanDao dao = new PartitionIndexBeanDao();
         dao.setKeyspaceFactory(_pm);
         dao.init();
@@ -3323,6 +3324,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
     public void testIndexPartitioning() throws Exception
     {
         TestPartitioner.partitionHistory().clear();
+        TestPartitioner.rangePartitionHistory().clear();
         PartitionIndexBeanDao dao = new PartitionIndexBeanDao();
         dao.setKeyspaceFactory(_pm);
         dao.init();
