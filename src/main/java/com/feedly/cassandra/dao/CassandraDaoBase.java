@@ -3,22 +3,39 @@ package com.feedly.cassandra.dao;
 import java.lang.management.ManagementFactory;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import javax.management.MBeanServer;
 import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
 
+import me.prettyprint.cassandra.serializers.BytesArraySerializer;
+import me.prettyprint.cassandra.serializers.CompositeSerializer;
 import me.prettyprint.hector.api.Keyspace;
+import me.prettyprint.hector.api.beans.AbstractComposite.ComponentEquality;
+import me.prettyprint.hector.api.beans.ColumnSlice;
+import me.prettyprint.hector.api.beans.Composite;
+import me.prettyprint.hector.api.beans.HColumn;
+import me.prettyprint.hector.api.factory.HFactory;
+import me.prettyprint.hector.api.mutation.Mutator;
+import me.prettyprint.hector.api.query.SliceQuery;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.feedly.cassandra.EConsistencyLevel;
 import com.feedly.cassandra.IKeyspaceFactory;
+import com.feedly.cassandra.PersistenceManager;
+import com.feedly.cassandra.entity.EIndexType;
 import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.IndexMetadata;
+import com.feedly.cassandra.entity.SimplePropertyMetadata;
+import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 
 /**
  * This class serves as a foundation class for saving and retrieving entities in Cassandra. Subclasses can define additional business logic
@@ -39,7 +56,8 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     static final int ROW_RANGE_SIZE = 100;
     private final EntityMetadata<V> _entityMeta;
     private final EConsistencyLevel _defaultConsistency;
-    
+    private final List<SimplePropertyMetadata> _rangeIndexedProps;
+
     private GetHelper<K, V> _getHelper;
     private FindHelper<K, V> _findHelper;
     private PutHelper<K, V> _putHelper;
@@ -47,6 +65,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     private IKeyspaceFactory _keyspaceFactory;
     private IStaleIndexValueStrategy _staleIndexValueStrategy;
     private int _statsSize = MBeanUtils.DEFAULT_STATS_SIZE;
+    private OperationStatistics _walRecoveryStats;
     
     protected CassandraDaoBase()
     {
@@ -83,6 +102,16 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
 
 
 
+        List<SimplePropertyMetadata> props = new ArrayList<SimplePropertyMetadata>();
+        for(IndexMetadata idxMeta : _entityMeta.getIndexes())
+        {
+            if(idxMeta.getType() == EIndexType.RANGE)
+            {
+                props.addAll(idxMeta.getIndexedProperties());
+            }
+        }
+        
+        _rangeIndexedProps = Collections.unmodifiableList(props);
         _logger.info("{} [{}]:\n{}", new Object[] {getClass().getSimpleName(), _entityMeta.getFamilyName(), _entityMeta.toString()});
     }
 
@@ -140,6 +169,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         _findHelper = new FindHelper<K, V>(_entityMeta, withDefault, _staleIndexValueStrategy, _statsSize);
         _putHelper = new PutHelper<K, V>(_entityMeta, withDefault, _statsSize);
         _deleteHelper = new DeleteHelper<K, V>(_entityMeta, withDefault, _statsSize);
+        _walRecoveryStats = new OperationStatistics(_statsSize);
         registerMBeans();
     }
 
@@ -155,6 +185,8 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
 
         try 
         {
+            mbs.registerMBean(new OperationStatisticsMonitor(_walRecoveryStats), mBeanName("walStats"));
+            
             mbs.registerMBean(new OperationStatisticsMonitor(getStats()), mBeanName("getStats"));
             
             mbs.registerMBean(new OperationStatisticsMonitor(deleteStats()), mBeanName("deleteStats"));
@@ -267,13 +299,13 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     }
 
     @Override
-    public final void put(V value)
+    public void put(V value)
     {
         put(value, null);
     }
 
     @Override
-    public final void put(V value, PutOptions options)
+    public void put(V value, PutOptions options)
     {
         if(options == null)
             options = new PutOptions();
@@ -283,13 +315,13 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     
     
     @Override
-    public final void mput(Collection<V> values)
+    public void mput(Collection<V> values)
     {
         mput(values, null);
     }
 
     @Override
-    public final void mput(Collection<V> values, PutOptions options)
+    public void mput(Collection<V> values, PutOptions options)
     {
         if(options == null)
             options = new PutOptions();
@@ -298,13 +330,13 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     }
     
     @Override
-    public final V get(K key)
+    public V get(K key)
     {
         return get(key, null, null);
     }
 
     @Override
-    public final V get(K key, V value, GetOptions options)
+    public V get(K key, V value, GetOptions options)
     {
         if(options == null)
             options = new GetOptions();
@@ -356,13 +388,13 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         return _findHelper.find(template, options);
     }
 
-    
+    @Override
     public Collection<V> mfind(V template)
     {
         return mfind(template, null);
     }
 
-    
+    @Override
     public Collection<V> mfind(V template, FindOptions options)
     {
         if(options == null)
@@ -370,12 +402,13 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         return _findHelper.mfind(template, options);
     }
 
+    @Override
     public Collection<V> mfindBetween(V startTemplate, V endTemplate)
     {
         return mfindBetween(startTemplate, endTemplate, null);
     }
 
-    
+    @Override
     public Collection<V> mfindBetween(V startTemplate, V endTemplate, FindBetweenOptions options)
     {
         if(options == null)
@@ -411,6 +444,73 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
             options = new DeleteOptions();
         
         _deleteHelper.mdelete(keys, options);
+    }
+    
+    @SuppressWarnings("unchecked")
+    public void checkWal(long before)
+    {
+        _walRecoveryStats.incrNumOps(1);
+        long startTime = System.nanoTime();
+        if(!_rangeIndexedProps.isEmpty())
+        {
+            Keyspace keyspace = _keyspaceFactory.createKeyspace(EConsistencyLevel.ALL);
+            
+            SliceQuery<byte[],Composite,byte[]> query = HFactory.createSliceQuery(keyspace, 
+                                                                                  BytesArraySerializer.get(), CompositeSerializer.get(), BytesArraySerializer.get());
+
+            query.setKey(_entityMeta.getFamilyNameBytes());
+            query.setColumnFamily(PersistenceManager.CF_IDXWAL);
+            Composite start = null;
+            Composite finish = new Composite();
+            finish.addComponent(before, DaoHelperBase.SER_LONG);
+            finish.setEquality(ComponentEquality.LESS_THAN_EQUAL);
+            
+            while(true)
+            {
+                query.setRange(start, finish, false, 100);
+                ColumnSlice<Composite,byte[]> slice = query.execute().get();
+                _walRecoveryStats.incrNumCassandraOps(1);
+
+                List<HColumn<Composite, byte[]>> columns = slice.getColumns();
+                if(columns.isEmpty())
+                    break;
+
+                Set<String> includes = new HashSet<String>(_rangeIndexedProps.size());
+                for(SimplePropertyMetadata spm : _rangeIndexedProps)
+                    includes.add(spm.getName());
+                
+                GetOptions opts = new GetOptions(includes, null);
+
+                for(HColumn<Composite, byte[]> col : columns)
+                {
+                    _walRecoveryStats.incrNumCols(1);
+                    K key = (K) col.getName().getComponent(1).getValue(_entityMeta.getKeyMetadata().getSerializer());
+                    V val = get(key, null, opts);
+                    
+                    if(val != null)
+                    {
+                        IEnhancedEntity e = (IEnhancedEntity) val;
+                        for(SimplePropertyMetadata spm : _rangeIndexedProps)
+                            e.getModifiedFields().set(_entityMeta.getPropertyPosition(spm));
+
+                        PutOptions popts = new PutOptions();
+                        popts.setConsistencyLevel(EConsistencyLevel.ALL);
+                        
+                        _putHelper.put(val, popts, col.getClock());
+                        
+                    }
+
+                    Mutator<byte[]> mutator = HFactory.createMutator(keyspace, DaoHelperBase.SER_BYTES);
+                    mutator.addDeletion(_entityMeta.getFamilyNameBytes(), PersistenceManager.CF_IDXWAL, col.getName(), DaoHelperBase.SER_COMPOSITE);
+                    mutator.execute();
+                    _walRecoveryStats.incrNumCassandraOps(2);
+                }
+                
+                start = columns.get(columns.size() - 1).getName();
+            }
+        }
+        
+        _walRecoveryStats.addRecentTiming(System.nanoTime() - startTime);
     }
     
     public OperationStatistics getStats()
@@ -451,5 +551,10 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     public OperationStatistics rangeFindIndexStats()
     {
         return _findHelper.rangeFindIndexStats();
+    }
+
+    public OperationStatistics walRecoveryStats()
+    {
+        return _walRecoveryStats;
     }
 }

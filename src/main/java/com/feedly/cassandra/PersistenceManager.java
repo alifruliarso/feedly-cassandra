@@ -48,6 +48,12 @@ import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 
 public class PersistenceManager implements IKeyspaceFactory
 {
+    /**
+     * The column family used to log range index writes. Data can be used to make data consistent if a problem occurs during a range indexed 
+     * write.
+     */
+    public static final String CF_IDXWAL = "fc_idxwal";
+
     private static final Logger _logger = LoggerFactory.getLogger(PersistenceManager.class.getName());
     private static final Map<EConsistencyLevel, ConsistencyLevelPolicy> _consistencyMapping;
     
@@ -186,7 +192,27 @@ public class PersistenceManager implements IKeyspaceFactory
             
             _cluster.addKeyspace(kdef, true);
         }
-        
+
+        boolean walExists = false;
+        for(ColumnFamilyDefinition cfdef : kdef.getCfDefs())
+        {
+            if(cfdef.getName().equals(CF_IDXWAL))
+            {
+                _logger.debug("'write ahead log' column family {} already exists", CF_IDXWAL);
+                walExists = true;
+                break;
+            }
+        }
+
+        if(!walExists)
+        {
+            ColumnFamilyDefinition cfDef = new BasicColumnFamilyDefinition(HFactory.createColumnFamilyDefinition(_keyspace, CF_IDXWAL));
+            _logger.info("creating 'write ahead log' column family {}", CF_IDXWAL);
+            cfDef.setComparatorType(ComparatorType.COMPOSITETYPE);
+            cfDef.setComparatorTypeAlias(String.format("(%s, %s)", ComparatorType.LONGTYPE.getTypeName(), ComparatorType.BYTESTYPE.getTypeName()));
+            addCompressionOptions(cfDef);
+            _cluster.addColumnFamily(cfDef, true);
+        }
         for(Class<?> family : _colFamilies)
         {
             syncColumnFamily(family, kdef);
@@ -385,51 +411,32 @@ public class PersistenceManager implements IKeyspaceFactory
 
     private void syncRangeIndexFamilies(EntityMetadata<?> meta, boolean hasRangeIndexes, KeyspaceDefinition keyspaceDef)
     {
-        boolean walExists = false, idxExists = false, revIdxExists = false;
+        boolean idxExists = false;
         for(ColumnFamilyDefinition existing : keyspaceDef.getCfDefs())
         {
-            if(existing.getName().equals(meta.getWalFamilyName()))
-                walExists = true;
-            else if(existing.getName().equals(meta.getIndexFamilyName()))
+            if(existing.getName().equals(meta.getIndexFamilyName()))
+            {
                 idxExists = true;
-            
-            if(walExists && revIdxExists && idxExists)
                 break;
+            }
         }
 
         
-        if(!hasRangeIndexes)
+        if(!hasRangeIndexes && idxExists)
         {
-            if(walExists)
-                _logger.warn("{}: does not have range indexes but 'write ahead log' column family {} exists. manual drop may be safely done.", 
-                             meta.getFamilyName(), meta.getWalFamilyName());
-            if(idxExists)
-                _logger.warn("{}: does not have range indexes but 'index' column family {} exists. manual drop may be safely done.", 
-                             meta.getFamilyName(), meta.getIndexFamilyName());
+            _logger.warn("{}: does not have range indexes but 'index' column family {} exists. manual drop may be safely done.", 
+                         meta.getFamilyName(), meta.getIndexFamilyName());
         }
-        
+        else if(hasRangeIndexes && !idxExists)
+        {
+            ColumnFamilyDefinition cfDef = new BasicColumnFamilyDefinition(HFactory.createColumnFamilyDefinition(_keyspace, meta.getIndexFamilyName()));
+            _logger.info("{}: has range indexes - create 'index' column family {}", meta.getFamilyName(), meta.getIndexFamilyName());
+            cfDef.setComparatorType(ComparatorType.DYNAMICCOMPOSITETYPE);
+            cfDef.setComparatorTypeAlias(DynamicComposite.DEFAULT_DYNAMIC_COMPOSITE_ALIASES);
+            addCompressionOptions(cfDef);
+            _cluster.addColumnFamily(cfDef, true);
+        }
         //assume if the table exists, it is created correctly
-
-        if(hasRangeIndexes)
-        {
-            if(!walExists)
-            {
-                ColumnFamilyDefinition cfDef = new BasicColumnFamilyDefinition(HFactory.createColumnFamilyDefinition(_keyspace, meta.getWalFamilyName()));
-                _logger.info("{}: has range indexes - create 'write ahead log' column family {}", meta.getFamilyName(), meta.getWalFamilyName());
-                cfDef.setComparatorType(ComparatorType.UTF8TYPE);
-                addCompressionOptions(cfDef);
-                _cluster.addColumnFamily(cfDef, true);
-            }
-            if(!idxExists)
-            {
-                ColumnFamilyDefinition cfDef = new BasicColumnFamilyDefinition(HFactory.createColumnFamilyDefinition(_keyspace, meta.getIndexFamilyName()));
-                _logger.info("{}: has range indexes - create 'index' column family {}", meta.getFamilyName(), meta.getIndexFamilyName());
-                cfDef.setComparatorType(ComparatorType.DYNAMICCOMPOSITETYPE);
-                cfDef.setComparatorTypeAlias(DynamicComposite.DEFAULT_DYNAMIC_COMPOSITE_ALIASES);
-                addCompressionOptions(cfDef);
-                _cluster.addColumnFamily(cfDef, true);
-            }
-        }
     }
     
     private void addCompressionOptions(ColumnFamilyDefinition def)

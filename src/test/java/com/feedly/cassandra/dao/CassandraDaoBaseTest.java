@@ -16,15 +16,18 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.TimeUnit;
 
 import me.prettyprint.cassandra.serializers.AsciiSerializer;
 import me.prettyprint.cassandra.serializers.BytesArraySerializer;
+import me.prettyprint.cassandra.serializers.CompositeSerializer;
 import me.prettyprint.cassandra.serializers.DynamicCompositeSerializer;
 import me.prettyprint.cassandra.serializers.IntegerSerializer;
 import me.prettyprint.cassandra.serializers.LongSerializer;
 import me.prettyprint.cassandra.serializers.StringSerializer;
 import me.prettyprint.hector.api.Keyspace;
 import me.prettyprint.hector.api.beans.ColumnSlice;
+import me.prettyprint.hector.api.beans.Composite;
 import me.prettyprint.hector.api.beans.CounterSlice;
 import me.prettyprint.hector.api.beans.DynamicComposite;
 import me.prettyprint.hector.api.beans.HColumn;
@@ -3374,21 +3377,13 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         
         //also test WAL cleaned up
         EntityMetadata<IndexedBean> meta = new EntityMetadata<IndexedBean>(IndexedBean.class);
-        String familyName = meta.getWalFamilyName();
-        for(IndexedBean bean : beans)
-        {
-            SliceQuery<Long,byte[],byte[]> query = HFactory.createSliceQuery(_pm.createKeyspace(EConsistencyLevel.ONE), LongSerializer.get(), BytesArraySerializer.get(), BytesArraySerializer.get());
-            query.setKey(bean.getRowKey());
-            query.setColumnFamily(familyName);
-            query.setColumnNames(PutHelper.WAL_COL_NAME);
-            ColumnSlice<byte[],byte[]> slice = query.execute().get();
-            if(!slice.getColumns().isEmpty())
-            {
-                assertEquals(1, slice.getColumns().size());
-                assertNull(slice.getColumns().get(0).getValue());
-            }
-                
-        }
+        SliceQuery<byte[],byte[],byte[]> query = HFactory.createSliceQuery(_pm.createKeyspace(EConsistencyLevel.ONE), 
+                                                                           BytesArraySerializer.get(), BytesArraySerializer.get(), BytesArraySerializer.get());
+        query.setKey(meta.getFamilyNameBytes());
+        query.setColumnFamily(PersistenceManager.CF_IDXWAL);
+        query.setRange(null, null, false, 100);
+        ColumnSlice<byte[],byte[]> slice = query.execute().get();
+        assertTrue(slice.getColumns().isEmpty());
         
         
         IndexedBean expected = beans.get(5);
@@ -3412,6 +3407,101 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         {
             //success
         }
+    }
+    
+    @Test
+    public void testWal() throws Exception
+    {
+        long startTime = System.currentTimeMillis();
+        List<IndexedBean> beans = new ArrayList<IndexedBean>();
+        for(long i = 0; i < 10; i++)
+        {
+            IndexedBean bean = new IndexedBean();
+            bean.setRowKey(i);
+            bean.setStrVal(null);
+            bean.setStrVal2("sval2");
+            bean.setLongVal(i);
+            beans.add(bean);
+        }
+        _indexedDao.mput(beans);
+
+        for(long i = 0; i < 10; i++)
+        {
+            IndexedBean bean = beans.get((int) i);
+            bean.setRowKey(i);
+            bean.setStrVal(null);
+            bean.setStrVal2("sval2");
+            bean.setLongVal(i);
+            beans.add(bean);
+        }
+
+        dropColumnFamily("indexedbean_idx");
+        
+        try
+        {
+            _indexedDao.mput(beans);
+        }
+        catch(Exception ex)
+        {
+            //success
+        }
+        
+        //data put failed, wal columns should exist
+        EntityMetadata<IndexedBean> meta = new EntityMetadata<IndexedBean>(IndexedBean.class);
+        SliceQuery<byte[],Composite,byte[]> query = HFactory.createSliceQuery(_pm.createKeyspace(EConsistencyLevel.ONE), 
+                                                                             BytesArraySerializer.get(), CompositeSerializer.get(), BytesArraySerializer.get());
+        query.setKey(meta.getFamilyNameBytes());
+        query.setColumnFamily(PersistenceManager.CF_IDXWAL);
+        query.setRange(null, null, false, 100);
+        ColumnSlice<Composite,byte[]> slice = query.execute().get();
+        assertEquals(10, slice.getColumns().size());
+        
+        for(HColumn<Composite, byte[]> col : slice.getColumns())
+        {
+            Composite colName = col.getName();
+            assertEquals(2, colName.size());
+            assertEquals(System.currentTimeMillis(), (Long) colName.getComponent(0).getValue(LongSerializer.get()), 1000);
+            assertEquals(System.currentTimeMillis()*1000, col.getClock(), TimeUnit.MICROSECONDS.convert(1, TimeUnit.SECONDS));
+            long rowkey = LongSerializer.get().fromBytes((byte[]) colName.getComponent(1).getValue(BytesArraySerializer.get()));
+            
+            boolean found = false;
+            for(int i = 0; i < beans.size(); i++)
+            {
+                if(beans.get(i).getRowKey().longValue() == rowkey)
+                {
+                    beans.remove(i);
+                    found = true;
+                    break;
+                }
+            }
+            
+            assertTrue("key " + rowkey, found);
+        }
+        
+        _pm.init(); //recreate table
+        
+        IndexedBean startTmpl = new IndexedBean(), endTmpl = new IndexedBean();
+        startTmpl.setLongVal(beans.get(0).getLongVal());
+        endTmpl.setLongVal(beans.get(beans.size() - 1).getLongVal());
+        
+        _indexedDao.checkWal(startTime - 500);
+        assertEquals(0, _indexedDao.mfindBetween(startTmpl, endTmpl).size());
+
+        assertEquals(1, _indexedDao.walRecoveryStats().getNumOps());
+        assertEquals(1, _indexedDao.walRecoveryStats().getNumCassandraOps());
+        assertEquals(0, _indexedDao.walRecoveryStats().getNumCols());
+        assertEquals(1, _indexedDao.walRecoveryStats().getRecentTimings().length);
+        
+        _indexedDao.walRecoveryStats().reset();
+        Thread.sleep(1000);
+
+        _indexedDao.checkWal(System.currentTimeMillis() - 100);
+        assertEquals(10, _indexedDao.mfindBetween(startTmpl, endTmpl).size());
+        
+        assertEquals(1, _indexedDao.walRecoveryStats().getNumOps());
+        assertEquals(22, _indexedDao.walRecoveryStats().getNumCassandraOps());
+        assertEquals(10, _indexedDao.walRecoveryStats().getNumCols());
+        assertEquals(1, _indexedDao.walRecoveryStats().getRecentTimings().length);
     }
     
     @Test

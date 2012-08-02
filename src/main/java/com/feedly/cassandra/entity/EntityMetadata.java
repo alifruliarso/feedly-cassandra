@@ -13,6 +13,7 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
+import me.prettyprint.cassandra.serializers.StringSerializer;
 import me.prettyprint.hector.api.Serializer;
 
 import org.slf4j.Logger;
@@ -41,7 +42,7 @@ public class EntityMetadata<V> extends EntityMetadataBase<V>
     private final Set<Annotation> _annotations;
     private final SimplePropertyMetadata _keyMeta;
     private final String _familyName;
-    private final String _walFamilyName;
+    private final byte[] _familyNameBytes;
     private final String _idxFamilyName;
     private final String _counterFamilyName;
     private final List<IndexMetadata> _indexes;
@@ -58,7 +59,7 @@ public class EntityMetadata<V> extends EntityMetadataBase<V>
         ColumnFamily familyAnno = clazz.getAnnotation(ColumnFamily.class);
 
         _familyName = familyAnno.name();
-        _walFamilyName = familyAnno.name() + "_idxwal";
+        _familyNameBytes = StringSerializer.get().toBytes(_familyName);
         _idxFamilyName = familyAnno.name() + "_idx";
         _counterFamilyName = familyAnno.name() + "_cntr";
         
@@ -294,9 +295,9 @@ public class EntityMetadata<V> extends EntityMetadataBase<V>
         return _familyName;
     }
     
-    public String getWalFamilyName()
+    public byte[] getFamilyNameBytes()
     {
-        return _walFamilyName;
+        return _familyNameBytes;
     }
     
     public String getIndexFamilyName()

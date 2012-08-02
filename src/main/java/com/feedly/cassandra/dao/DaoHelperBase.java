@@ -5,7 +5,9 @@ import java.util.Collection;
 import java.util.List;
 
 import me.prettyprint.cassandra.serializers.BytesArraySerializer;
+import me.prettyprint.cassandra.serializers.CompositeSerializer;
 import me.prettyprint.cassandra.serializers.DynamicCompositeSerializer;
+import me.prettyprint.cassandra.serializers.LongSerializer;
 import me.prettyprint.cassandra.serializers.StringSerializer;
 import me.prettyprint.hector.api.Serializer;
 import me.prettyprint.hector.api.beans.AbstractComposite.ComponentEquality;
@@ -28,7 +30,9 @@ abstract class DaoHelperBase<K,V>
 
     protected static final BytesArraySerializer SER_BYTES = BytesArraySerializer.get();
     protected static final StringSerializer SER_STRING = StringSerializer.get();
-    protected static final DynamicCompositeSerializer SER_COMPOSITE = new DynamicCompositeSerializer();
+    protected static final DynamicCompositeSerializer SER_DYNAMIC_COMPOSITE = new DynamicCompositeSerializer();
+    protected static final CompositeSerializer SER_COMPOSITE = new CompositeSerializer();
+    protected static final LongSerializer SER_LONG = LongSerializer.get();
 
     protected final EntityMetadata<V> _entityMeta;
     protected final IKeyspaceFactory _keyspaceFactory;
@@ -76,7 +80,7 @@ abstract class DaoHelperBase<K,V>
             colKey = BigInteger.valueOf(((Integer) colKey).longValue());
         
         dc.addComponent(1, colKey, keyEq); 
-        return SER_COMPOSITE.toBytes(dc);
+        return SER_DYNAMIC_COMPOSITE.toBytes(dc);
     }
     
     
@@ -113,7 +117,7 @@ abstract class DaoHelperBase<K,V>
         }
 
         if(isColName && _entityMeta.useCompositeColumns())
-            return SER_COMPOSITE.toBytes(new DynamicComposite(val));
+            return SER_DYNAMIC_COMPOSITE.toBytes(new DynamicComposite(val));
         
         if(serializer == null)
             serializer = EntityUtils.getSerializer(val.getClass());

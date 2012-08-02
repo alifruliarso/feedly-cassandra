@@ -284,7 +284,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
         {
             long startTime = System.nanoTime();
             MultigetSliceQuery<DynamicComposite,DynamicComposite,byte[]> multiGetQuery =
-                    HFactory.createMultigetSliceQuery(_keyspaceFactory.createKeyspace(level), SER_COMPOSITE, SER_COMPOSITE, SER_BYTES);
+                    HFactory.createMultigetSliceQuery(_keyspaceFactory.createKeyspace(level), SER_DYNAMIC_COMPOSITE, SER_DYNAMIC_COMPOSITE, SER_BYTES);
             
             multiGetQuery.setKeys(partitionKeys);
             multiGetQuery.setColumnFamily(_entityMeta.getIndexFamilyName());
@@ -432,7 +432,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
                                                                       EConsistencyLevel level)
     {
         SliceQuery<DynamicComposite,DynamicComposite,byte[]> query =
-                HFactory.createSliceQuery(_keyspaceFactory.createKeyspace(level), SER_COMPOSITE, SER_COMPOSITE, SER_BYTES);
+                HFactory.createSliceQuery(_keyspaceFactory.createKeyspace(level), SER_DYNAMIC_COMPOSITE, SER_DYNAMIC_COMPOSITE, SER_BYTES);
         
         query.setKey(partitionKey);
         query.setColumnFamily(_entityMeta.getIndexFamilyName());

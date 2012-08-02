@@ -9,10 +9,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import me.prettyprint.cassandra.serializers.LongSerializer;
 import me.prettyprint.cassandra.serializers.StringSerializer;
+import me.prettyprint.cassandra.service.clock.MillisecondsClockResolution;
 import me.prettyprint.hector.api.Keyspace;
 import me.prettyprint.hector.api.Serializer;
+import me.prettyprint.hector.api.beans.Composite;
 import me.prettyprint.hector.api.beans.DynamicComposite;
 import me.prettyprint.hector.api.beans.HColumn;
 import me.prettyprint.hector.api.beans.HCounterColumn;
@@ -21,6 +22,7 @@ import me.prettyprint.hector.api.mutation.Mutator;
 
 import com.feedly.cassandra.EConsistencyLevel;
 import com.feedly.cassandra.IKeyspaceFactory;
+import com.feedly.cassandra.PersistenceManager;
 import com.feedly.cassandra.entity.ByteIndicatorSerializer;
 import com.feedly.cassandra.entity.EIndexType;
 import com.feedly.cassandra.entity.EPropertyType;
@@ -36,12 +38,12 @@ import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 
 class PutHelper<K, V> extends DaoHelperBase<K, V>
 {
-    private static final LongSerializer SER_LONG = LongSerializer.get();
-
+    private static final MillisecondsClockResolution WAL_CLOCK = new MillisecondsClockResolution();
+    
     static final byte[] WAL_COL_NAME = StringSerializer.get().toBytes("rowkey"); 
     static final byte[] IDX_COL_VAL = new byte[] {0}; 
 
-    private OperationStatistics _indexStats;
+    private final OperationStatistics _indexStats;
     
     PutHelper(EntityMetadata<V> meta, IKeyspaceFactory factory, int statsSize)
     {
@@ -56,10 +58,20 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
     
     public void put(V value, PutOptions options)
     {
-        mput(Collections.singleton(value), options);
+        mput(Collections.singleton(value), options, -1);
     }
 
+    public void put(V value, PutOptions options, long clock)
+    {
+        mput(Collections.singleton(value), options, clock);
+    }
+    
     public void mput(Collection<V> values, PutOptions options)
+    {
+        mput(values, options, -1);
+    }
+
+    public void mput(Collection<V> values, PutOptions options, long clock)
     {
         long startTime = System.nanoTime();
         SimplePropertyMetadata keyMeta = _entityMeta.getKeyMetadata();
@@ -68,10 +80,13 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
         Mutator<byte[]> walMutator = null;
         Mutator<byte[]> walCleanupMutator = null;
         boolean indexesUpdated = false;
-        long clock = keyspace.createClock();
-        byte[] nowBytes = SER_LONG.toBytes(clock);
+        if(clock < 0)
+            clock = keyspace.createClock();
+        
+        long msec = WAL_CLOCK.createClock(); //must be millis
                 
         SaveStatus overallStatus = new SaveStatus();
+        
         //prepare the operations...
         for(V value : values)
         {
@@ -115,9 +130,10 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                     walCleanupMutator = HFactory.createMutator(keyspace, SER_BYTES);
                 }
                 indexesUpdated = true;
-                HColumn<byte[], byte[]> column = HFactory.createColumn(WAL_COL_NAME, nowBytes, clock, SER_BYTES, SER_BYTES);
-                walMutator.addInsertion(keyBytes, _entityMeta.getWalFamilyName(), column);
-                walCleanupMutator.addDeletion(keyBytes, _entityMeta.getWalFamilyName(), WAL_COL_NAME, SER_BYTES, clock);
+                Composite walColName = new Composite(msec, keyBytes);
+                HColumn<Composite, byte[]> column = HFactory.createColumn(walColName, IDX_COL_VAL, clock, SER_COMPOSITE, SER_BYTES);
+                walMutator.addInsertion(_entityMeta.getFamilyNameBytes(), PersistenceManager.CF_IDXWAL, column);
+                walCleanupMutator.addDeletion(_entityMeta.getFamilyNameBytes(), PersistenceManager.CF_IDXWAL, walColName, SER_COMPOSITE, clock);
             }
         }
         
@@ -171,6 +187,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
         _logger.debug("inserted {} values into {}", values.size(), _entityMeta.getType().getSimpleName());
     }
 
+
     //rv[0] = total col cnt, rv[1] = range index update count
     @SuppressWarnings({ "rawtypes", "unchecked" })
     private SaveStatus saveDirtyFields(StringBuilder descriptor,
@@ -219,7 +236,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                                 if(cc.dirty())
                                 {
                                     _logger.trace("{} = {}", new Object[] {descriptor, cc.getIncrement()});
-                                    HCounterColumn<DynamicComposite> counterColumn = HFactory.createCounterColumn(colBase, cc.getIncrement(), SER_COMPOSITE);
+                                    HCounterColumn<DynamicComposite> counterColumn = HFactory.createCounterColumn(colBase, cc.getIncrement(), SER_DYNAMIC_COMPOSITE);
                                     mutator.addCounter(keyBytes, _entityMeta.getCounterFamilyName(), counterColumn);
                                     rv.addCounter(cc);
                                 }
@@ -229,7 +246,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                             else
                             {
                                 _logger.trace("{} = {}", new Object[] {descriptor, propVal});
-                                HColumn column = HFactory.createColumn(colBase, propVal, clock, SER_COMPOSITE, (Serializer) spm.getSerializer());
+                                HColumn column = HFactory.createColumn(colBase, propVal, clock, SER_DYNAMIC_COMPOSITE, (Serializer) spm.getSerializer());
                                 if(spm.isTtlSet())
                                     column.setTtl(spm.ttl());
 
@@ -241,9 +258,9 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                             _logger.trace("{} = {}", new Object[] {descriptor, propVal});
 
                             if(spm.hasCounter())
-                                mutator.addCounterDeletion(keyBytes, _entityMeta.getCounterFamilyName(), colBase, SER_COMPOSITE);
+                                mutator.addCounterDeletion(keyBytes, _entityMeta.getCounterFamilyName(), colBase, SER_DYNAMIC_COMPOSITE);
                             else
-                                mutator.addDeletion(keyBytes, _entityMeta.getFamilyName(), colBase, SER_COMPOSITE, clock);
+                                mutator.addDeletion(keyBytes, _entityMeta.getFamilyName(), colBase, SER_DYNAMIC_COMPOSITE, clock);
                         }
                         
                         colBase.remove(colBase.size()-1);
@@ -382,7 +399,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
         
         colName.add(key);
         
-        HColumn<DynamicComposite, byte[]> column = HFactory.createColumn(colName, IDX_COL_VAL, clock, SER_COMPOSITE, SER_BYTES);
+        HColumn<DynamicComposite, byte[]> column = HFactory.createColumn(colName, IDX_COL_VAL, clock, SER_DYNAMIC_COMPOSITE, SER_BYTES);
         
         DynamicComposite rowKey = new DynamicComposite(idxMeta.id());
         
@@ -394,7 +411,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
         for(Object partitionVal : allPartitions.get(0))
             rowKey.add(partitionVal);
         
-        mutator.addInsertion(SER_COMPOSITE.toBytes(rowKey), _entityMeta.getIndexFamilyName(), column);
+        mutator.addInsertion(SER_DYNAMIC_COMPOSITE.toBytes(rowKey), _entityMeta.getIndexFamilyName(), column);
     }
 
     @SuppressWarnings({ "unchecked", "rawtypes" })
@@ -645,7 +662,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
 
         if(propVal == null)
         {
-            mutator.addDeletion(keyBytes, _entityMeta.getFamilyName(), colName, SER_COMPOSITE, clock);
+            mutator.addDeletion(keyBytes, _entityMeta.getFamilyName(), colName, SER_DYNAMIC_COMPOSITE, clock);
         }
         else
         {
@@ -658,7 +675,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
                                                                  propVal));
             }
 
-            HColumn<DynamicComposite, byte[]> column = HFactory.createColumn(colName, propValBytes, clock, SER_COMPOSITE, SER_BYTES);
+            HColumn<DynamicComposite, byte[]> column = HFactory.createColumn(colName, propValBytes, clock, SER_DYNAMIC_COMPOSITE, SER_BYTES);
             if(colMeta.isTtlSet())
                 column.setTtl(colMeta.ttl());
             
@@ -712,7 +729,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
             {
                 DynamicComposite dc = new DynamicComposite(colBase);
                 dc.add(entry.getKey());
-                colName = SER_COMPOSITE.toBytes(dc);
+                colName = SER_DYNAMIC_COMPOSITE.toBytes(dc);
             }
             if(colVal != null)
             {
@@ -786,5 +803,4 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
             savedCounters.add(c);
         }
     }
-
 }

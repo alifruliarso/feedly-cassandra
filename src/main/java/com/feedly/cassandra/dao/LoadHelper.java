@@ -110,7 +110,7 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
         for(int i = 0; i < size; i++)
         {
             HColumn<byte[], byte[]> col = columns.get(i);
-            Object colName= _entityMeta.useCompositeColumns() ? SER_COMPOSITE.fromBytes(col.getName()) : SER_STRING.fromBytes(col.getName());
+            Object colName= _entityMeta.useCompositeColumns() ? SER_DYNAMIC_COMPOSITE.fromBytes(col.getName()) : SER_STRING.fromBytes(col.getName());
 
             loadValueProperty(descriptor, value, _entityMeta, 0, colName, col.getValue(), entities, unmapped, containers);
         }
@@ -167,7 +167,7 @@ abstract class LoadHelper<K,V> extends DaoHelperBase<K, V>
         for(int i = 0; i < size; i++)
         {
             HCounterColumn<byte[]> col = columns.get(i);
-            Object colName= _entityMeta.useCompositeColumns() ? SER_COMPOSITE.fromBytes(col.getName()) : SER_STRING.fromBytes(col.getName());
+            Object colName= _entityMeta.useCompositeColumns() ? SER_DYNAMIC_COMPOSITE.fromBytes(col.getName()) : SER_STRING.fromBytes(col.getName());
             
             loadValueProperty(descriptor, value, _entityMeta, 0, colName, col.getValue(), entities, null, containers);
         }

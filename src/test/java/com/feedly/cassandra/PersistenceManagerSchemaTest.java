@@ -162,7 +162,7 @@ public class PersistenceManagerSchemaTest extends CassandraServiceTestBase
         String partitionedIndexBeanName = PartitionedIndexBean.class.getAnnotation(ColumnFamily.class).name();
         
         boolean foundIndexBeanIdx = false, foundCompositeIndexBeanIdx = false, foundPartitionedIndexBeanIdx = false;
-        boolean foundIndexBeanWal = false, foundCompositeIndexBeanWal = false, foundPartitionedIndexBeanWal = false;
+        boolean foundWal = false;
         
         for(ColumnFamilyDefinition cfdef : cluster.describeKeyspace(KEYSPACE).getCfDefs())
         {
@@ -178,25 +178,14 @@ public class PersistenceManagerSchemaTest extends CassandraServiceTestBase
                 else
                     fail("unrecognized index table " + name);
             }
-            else if(name.endsWith("_idxwal"))
-            {
-                if(name.equals(indexBeanName + "_idxwal"))
-                    foundIndexBeanWal = true;
-                else if(name.equals(compositeIndexBeanName + "_idxwal"))
-                    foundCompositeIndexBeanWal = true;
-                else if(name.equals(partitionedIndexBeanName + "_idxwal"))
-                    foundPartitionedIndexBeanWal = true;
-                else
-                    fail("unrecognized WAL index table " + name);
-            }
+            else if(name.endsWith(PersistenceManager.CF_IDXWAL))
+                foundWal = true;
         }
         
         assertTrue(foundCompositeIndexBeanIdx);
-        assertTrue(foundCompositeIndexBeanWal);
         assertTrue(foundIndexBeanIdx);
-        assertTrue(foundIndexBeanWal);
+        assertTrue(foundWal);
         assertTrue(foundPartitionedIndexBeanIdx);
-        assertTrue(foundPartitionedIndexBeanWal);
     }
     
     @Test

@@ -88,6 +88,11 @@ public class CassandraServiceTestBase
         createColumnFamily(family, ComparatorType.ASCIITYPE);
     }
     
+    public static void dropColumnFamily(String family)
+    {
+        cluster.dropColumnFamily(KEYSPACE, family, true);
+    }
+    
     public static void createColumnFamily(String family, ComparatorType ctype)
     {
         KeyspaceDefinition kdef = cluster.describeKeyspace(KEYSPACE);
@@ -112,7 +117,7 @@ public class CassandraServiceTestBase
     public void deleteAll()
     {
         for(ColumnFamilyDefinition defn : cluster.describeKeyspace(KEYSPACE).getCfDefs())
-            cluster.dropColumnFamily(KEYSPACE, defn.getName(), true);
+            dropColumnFamily(defn.getName());
     }
     
 }
