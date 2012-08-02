@@ -3288,6 +3288,35 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         Collections.sort(idxActuals);
         assertBeansEqual(idxBeans.subList(5, 20), idxActuals);
     }
+
+    @Test
+    public void testManyPartitions() throws Exception
+    {
+        PartitionIndexBeanDao dao = new PartitionIndexBeanDao();
+        dao.setKeyspaceFactory(_pm);
+        dao.init();
+        
+        int numBeans = 1000;
+        List<PartitionedIndexBean> idxBeans = new ArrayList<PartitionedIndexBean>();
+        for(long i = 0; i < numBeans; i++)
+        {
+            PartitionedIndexBean idxBean = new PartitionedIndexBean();
+            idxBean.setRowKey(i);
+            idxBean.setPartitionedValue(i);
+            
+            idxBeans.add(idxBean);
+        }
+        dao.mput(idxBeans);
+        
+        PartitionedIndexBean tmpl = new PartitionedIndexBean();
+        tmpl.setPartitionedValue(0L);
+        PartitionedIndexBean endTmpl = new PartitionedIndexBean();
+        
+        //ends up searching 1500 partitions, meaning each partition will initially be asked for one column and then a subsequent get will
+        //find an additional column in the partition
+        endTmpl.setPartitionedValue(numBeans*3L);
+        assertEquals(1000, dao.mfindBetween(tmpl, endTmpl).size());
+    }
     
     @Test
     public void testIndexPartitioning() throws Exception

@@ -289,7 +289,9 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
             multiGetQuery.setKeys(partitionKeys);
             multiGetQuery.setColumnFamily(_entityMeta.getIndexFamilyName());
             Rows<DynamicComposite,DynamicComposite,byte[]> indexRows;
-            multiGetQuery.setRange(startCol, endCol, false, CassandraDaoBase.COL_RANGE_SIZE);
+            
+            int colRangeSize = Math.max(CassandraDaoBase.COL_RANGE_SIZE/partitionKeys.length, 1);
+            multiGetQuery.setRange(startCol, endCol, false, colRangeSize); //count here applies to the column slice of each row, not the overall count
             indexRows = multiGetQuery.execute().get();
             
             boolean hasMore = false;
@@ -308,7 +310,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
                     rv.add(k, v);
                 }
 
-                if(columns.size() == CassandraDaoBase.COL_RANGE_SIZE)
+                if(columns.size() == colRangeSize)
                 {
                     partitionResult.setHasMore(true);
                     if(!hasMore)
@@ -317,7 +319,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
                         hasMore = true;
                     }
                     
-                    DynamicComposite start = columns.get(CassandraDaoBase.COL_RANGE_SIZE - 1).getName();
+                    DynamicComposite start = columns.get(colRangeSize - 1).getName();
                     start.setEquality(ComponentEquality.GREATER_THAN_EQUAL);
                     partitionResult.setStartCol(start);
                     partitionResult.setEndCol(endCol);

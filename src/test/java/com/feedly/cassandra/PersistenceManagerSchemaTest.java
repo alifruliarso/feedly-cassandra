@@ -22,6 +22,7 @@ import com.feedly.cassandra.entity.enhance.ListBean;
 import com.feedly.cassandra.entity.enhance.ParentCounterBean;
 import com.feedly.cassandra.entity.enhance.PartitionedIndexBean;
 import com.feedly.cassandra.entity.enhance.SampleBean;
+import com.feedly.cassandra.entity.enhance.TtlBean;
 import com.feedly.cassandra.entity.upd_enhance.SampleBean2;
 import com.feedly.cassandra.test.CassandraServiceTestBase;
 
@@ -158,10 +159,11 @@ public class PersistenceManagerSchemaTest extends CassandraServiceTestBase
         pm.init();
         
         String indexBeanName = IndexedBean.class.getAnnotation(ColumnFamily.class).name();
+        String ttlBeanName = TtlBean.class.getAnnotation(ColumnFamily.class).name();
         String compositeIndexBeanName = CompositeIndexedBean.class.getAnnotation(ColumnFamily.class).name();
         String partitionedIndexBeanName = PartitionedIndexBean.class.getAnnotation(ColumnFamily.class).name();
         
-        boolean foundIndexBeanIdx = false, foundCompositeIndexBeanIdx = false, foundPartitionedIndexBeanIdx = false;
+        boolean foundIndexBeanIdx = false, foundTtlBeanIdx = false, foundCompositeIndexBeanIdx = false, foundPartitionedIndexBeanIdx = false;
         boolean foundWal = false;
         
         for(ColumnFamilyDefinition cfdef : cluster.describeKeyspace(KEYSPACE).getCfDefs())
@@ -175,6 +177,8 @@ public class PersistenceManagerSchemaTest extends CassandraServiceTestBase
                     foundCompositeIndexBeanIdx = true;
                 else if(name.equals(partitionedIndexBeanName + "_idx"))
                     foundPartitionedIndexBeanIdx = true;
+                else if(name.equals(ttlBeanName + "_idx"))
+                    foundTtlBeanIdx = true;
                 else
                     fail("unrecognized index table " + name);
             }
@@ -184,6 +188,7 @@ public class PersistenceManagerSchemaTest extends CassandraServiceTestBase
         
         assertTrue(foundCompositeIndexBeanIdx);
         assertTrue(foundIndexBeanIdx);
+        assertTrue(foundTtlBeanIdx);
         assertTrue(foundWal);
         assertTrue(foundPartitionedIndexBeanIdx);
     }
