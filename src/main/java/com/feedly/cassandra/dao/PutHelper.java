@@ -373,6 +373,7 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
         List<Object> propVals = null;
         DynamicComposite colName = new DynamicComposite();
         boolean propertyNotSet = false;
+        int ttl = -1;
         for(SimplePropertyMetadata pm : idxMeta.getIndexedProperties())
         {
             Object pval = invokeGetter(pm, value);
@@ -380,7 +381,13 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
             {
                 if(propVals == null)
                     propVals = new ArrayList<Object>(idxMeta.getIndexedProperties().size());
-                
+
+                if(pm.isTtlSet())
+                {
+                    int colTtl = pm.ttl();
+                    if(ttl < 0 || colTtl < ttl) //min ttl of the indexed properties
+                        ttl = colTtl;
+                }
                 propVals.add(pval);
                 colName.add(pval);
             }
@@ -410,6 +417,9 @@ class PutHelper<K, V> extends DaoHelperBase<K, V>
         _logger.trace("writing to partition {}", allPartitions.get(0));
         for(Object partitionVal : allPartitions.get(0))
             rowKey.add(partitionVal);
+        
+        if(ttl > 0)
+            column.setTtl(ttl);
         
         mutator.addInsertion(SER_DYNAMIC_COMPOSITE.toBytes(rowKey), _entityMeta.getIndexFamilyName(), column);
     }

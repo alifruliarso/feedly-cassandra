@@ -379,10 +379,21 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         bean.setStrVal3("v3");
         dao.put(bean);
 
+        TtlBean tmpl = new TtlBean();
+        tmpl.setStrVal1(bean.getStrVal1());
+        tmpl.setStrVal2(bean.getStrVal2());
+        tmpl.setStrVal3(bean.getStrVal3());
+        
+        assertEquals(1, dao.mfind(tmpl).size());
+        assertEquals(1, dao.rangeFindStats().getNumOps());
+                     
         assertEquals(bean, dao.get(bean.getRowKey()));
 
         Thread.sleep(7500);
-
+        dao.rangeFindStats().reset();
+        assertEquals(0, dao.mfind(tmpl).size()); //index row should have expired as well
+        assertEquals(0, dao.rangeFindStats().getNumOps());
+        
         bean.setStrVal1(null);
         assertEquals(bean, dao.get(bean.getRowKey()));
 

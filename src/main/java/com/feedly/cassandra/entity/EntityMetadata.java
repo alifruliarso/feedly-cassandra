@@ -179,8 +179,8 @@ public class EntityMetadata<V> extends EntityMetadataBase<V>
                 if(l.contains(p))
                     throw new IllegalStateException("duplicate property referenced in index: " + prop);
 
-                if(p.getPropertyType() != EPropertyType.SIMPLE)
-                    throw new IllegalStateException("non primitive or enum property referenced in index: " + prop);
+                if(p == null || p.getPropertyType() != EPropertyType.SIMPLE)
+                    throw new IllegalStateException("non existent, non primitive or enum property referenced in index: " + prop);
                 
                 l.add((SimplePropertyMetadata) p);
             }

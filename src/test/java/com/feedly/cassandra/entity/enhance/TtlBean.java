@@ -4,10 +4,12 @@ import java.lang.reflect.Field;
 
 import com.feedly.cassandra.anno.Column;
 import com.feedly.cassandra.anno.ColumnFamily;
+import com.feedly.cassandra.anno.Index;
 import com.feedly.cassandra.anno.RowKey;
 import com.feedly.cassandra.entity.EntityUtils;
 
 @ColumnFamily(name="ttlbean", ttl=10)
+@Index(props= {"strVal1", "strVal2", "strVal3"})
 public class TtlBean
 {
     @RowKey

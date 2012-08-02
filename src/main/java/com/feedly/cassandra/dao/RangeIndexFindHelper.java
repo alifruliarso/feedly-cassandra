@@ -508,6 +508,11 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
                            IndexMetadata index,
                            EConsistencyLevel level)
     {
+        if(result.getCurrentKeys().isEmpty())
+        {
+            return Collections.emptyList();
+        }
+        
         if(options.getColumnFilterStrategy() == EColumnFilterStrategy.INCLUDES)
         {
             Set<Object> partialProperties = new HashSet<Object>(partialProperties(options.getIncludes(), options.getExcludes()));
