@@ -1418,6 +1418,24 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             assertTrue(actualKeys.add(loaded.getRowKey()));
             assertEquals(beans.get(loaded.getRowKey().intValue()), loaded);
         }
+        
+        //delete half the beans to create empty rows, make sure code still works
+        for(int i = beans.size() - 1; i >= 0; i=i-2)
+            _dao.delete(beans.remove(i).getRowKey());
+
+        actual = new ArrayList<SampleBean>( _dao.mgetAll() );
+
+        Collections.sort(actual);
+        assertEquals(beans.size(), actual.size());
+        
+        for(int i = beans.size() - 1; i >= 0; i--)
+        {
+            SampleBean loaded = actual.get(i);
+            assertEquals("bean[" + i + "]", beans.get(i), loaded);
+
+            assertTrue(((IEnhancedEntity) loaded).getModifiedFields().isEmpty());
+        }
+        
     }
     
     @Test
@@ -3399,6 +3417,32 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         assertBeansEqual(expectedRange, TestPartitioner.rangePartitionHistory().get(0));
         
         TestPartitioner.partitionHistory().clear();
+        
+        /*
+         * large range between find
+         */
+        TestPartitioner.partitionHistory().clear();
+        TestPartitioner.rangePartitionHistory().clear();
+        
+        numBeans = CassandraDaoBase.ROW_RANGE_SIZE*10;
+        idxBeans = new ArrayList<PartitionedIndexBean>();
+        for(long i = 0; i < numBeans; i++)
+        {
+            PartitionedIndexBean idxBean = new PartitionedIndexBean();
+            idxBean.setRowKey(1000+i);
+            idxBean.setPartitionedValue(1000+i*2);
+            
+            idxBeans.add(idxBean);
+        }
+        dao.mput(idxBeans);
+
+        tmpl.setPartitionedValue(idxBeans.get(0).getPartitionedValue());
+        endTmpl.setPartitionedValue(idxBeans.get(numBeans-1).getPartitionedValue());
+
+        actual = new ArrayList<PartitionedIndexBean>(dao.mfindBetween(tmpl, endTmpl));
+        Collections.sort(actual);
+        assertBeansEqual(idxBeans, actual);
+        assertEquals(numBeans, TestPartitioner.rangePartitionHistory().get(0).size());
     }
 
     //for entities with multi-column indexes, when writing a value to indexes, all indexed values must be specified, otherwise the index

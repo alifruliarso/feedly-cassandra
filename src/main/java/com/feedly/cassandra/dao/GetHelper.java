@@ -524,18 +524,24 @@ class GetHelper<K, V> extends LoadHelper<K, V>
             {
                 _query = HFactory.createRangeSlicesQuery(_keyspaceFactory.createKeyspace(options.getConsistencyLevel()), SER_BYTES, SER_BYTES, SER_BYTES);
                 _query.setColumnFamily(_entityMeta.getFamilyName());
-                _lastKeyOfBatch = fetch(_query, null, options, _first); 
+                do
+                {
+                    _lastKeyOfBatch = fetch(_query, null, options, _first); 
+                } while(_lastKeyOfBatch != null && _first.isEmpty());
             }
             else
             {
                 _counterQuery = HFactory.createRangeSlicesCounterQuery(_keyspaceFactory.createKeyspace(options.getConsistencyLevel()), SER_BYTES, SER_BYTES);
                 _counterQuery.setColumnFamily(_entityMeta.getCounterFamilyName());
-                _lastKeyOfCounterBatch = fetch(_counterQuery, null, options, _first);
+                do
+                {
+                    _lastKeyOfCounterBatch = fetch(_counterQuery, null, options, _first);
+                } while(_lastKeyOfCounterBatch != null && _first.isEmpty());
             }
             
             if(_first.isEmpty())
                 _all = _first; //no data
-            else if(_first.size() < CassandraDaoBase.ROW_RANGE_SIZE)
+            else if(_lastKeyOfBatch == null && _lastKeyOfCounterBatch == null)
                 _all = _first; //all data has been read
             
             _options = options;

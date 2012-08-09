@@ -256,7 +256,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
         {
             DynamicComposite rowKey = new DynamicComposite();
             rowKey.add(index.id());
-            for(Object pval :partition)
+            for(Object pval : partition)
                 rowKey.add(pval);
             rowKeys.add(rowKey);
         }
@@ -280,7 +280,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
         RangeIndexQueryResult<K> rv = new RangeIndexQueryResult<K>();
         List<RangeIndexQueryPartitionResult> partitionResults = rv.getPartitionResults();
         
-        if(colOrder == EFindOrder.NONE) //can attempt to find all rows at once
+        if(colOrder == EFindOrder.NONE && partitionKeys.length <= CassandraDaoBase.COL_RANGE_SIZE) //can attempt to find all rows at once
         {
             long startTime = System.nanoTime();
             MultigetSliceQuery<DynamicComposite,DynamicComposite,byte[]> multiGetQuery =
@@ -290,7 +290,7 @@ class RangeIndexFindHelper<K, V> extends LoadHelper<K, V>
             multiGetQuery.setColumnFamily(_entityMeta.getIndexFamilyName());
             Rows<DynamicComposite,DynamicComposite,byte[]> indexRows;
             
-            int colRangeSize = Math.max(CassandraDaoBase.COL_RANGE_SIZE/partitionKeys.length, 1);
+            int colRangeSize = CassandraDaoBase.COL_RANGE_SIZE/partitionKeys.length;
             multiGetQuery.setRange(startCol, endCol, false, colRangeSize); //count here applies to the column slice of each row, not the overall count
             indexRows = multiGetQuery.execute().get();
             
