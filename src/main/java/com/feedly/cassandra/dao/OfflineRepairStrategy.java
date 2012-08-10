@@ -92,7 +92,7 @@ public class OfflineRepairStrategy implements IStaleIndexValueStrategy
         {
             MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
             mbs.unregisterMBean(MBeanUtils.mBeanName(this, null, "repairStats"));
-            _logger.info("monitoring registration complete for {}", getClass().getSimpleName());
+            _logger.info("monitoring unregistration complete for {}", getClass().getSimpleName());
         } 
         catch(Exception e) 
         {

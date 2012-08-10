@@ -214,6 +214,8 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         
         try 
         {
+            mbs.unregisterMBean(mBeanName("walStats"));
+
             mbs.unregisterMBean(mBeanName("getStats"));
 
             mbs.unregisterMBean(mBeanName("deleteStats"));
@@ -234,7 +236,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
             _logger.warn("error unregistering mbeans", e);
         }
     }
-    
+
     private boolean keyClassMatches(Class<?> fieldType, Class<?> keyType)
     {
         if(fieldType.equals(keyType))
