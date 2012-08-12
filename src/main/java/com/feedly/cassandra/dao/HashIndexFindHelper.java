@@ -224,7 +224,7 @@ class HashIndexFindHelper<K, V> extends LoadHelper<K, V>
         _indexStats.incrNumRows(size);
         _indexStats.incrNumCassandraOps(1);
         
-        _logger.info("{} rows, {} values, ({} non null) fetched", new Object[] {cnt, size, nonNull});
+        _logger.debug("{} rows, {} values, ({} non null) fetched", new Object[] {cnt, size, nonNull});
 
         return lastKeyBytes;
     }

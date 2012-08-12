@@ -526,7 +526,7 @@ class GetHelper<K, V> extends LoadHelper<K, V>
                 _query.setColumnFamily(_entityMeta.getFamilyName());
                 do
                 {
-                    _lastKeyOfBatch = fetch(_query, null, options, _first); 
+                    _lastKeyOfBatch = fetch(_query, _lastKeyOfBatch, options, _first); 
                 } while(_lastKeyOfBatch != null && _first.isEmpty());
             }
             else

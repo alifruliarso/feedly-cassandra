@@ -449,10 +449,11 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
     }
     
     @SuppressWarnings("unchecked")
-    public void checkWal(long before)
+    public int checkWal(long before)
     {
         _walRecoveryStats.incrNumOps(1);
         long startTime = System.nanoTime();
+        int cnt = 0;
         if(!_rangeIndexedProps.isEmpty())
         {
             Keyspace keyspace = _keyspaceFactory.createKeyspace(EConsistencyLevel.ALL);
@@ -485,6 +486,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
 
                 for(HColumn<Composite, byte[]> col : columns)
                 {
+                    cnt++;
                     _walRecoveryStats.incrNumCols(1);
                     K key = (K) col.getName().getComponent(1).getValue(_entityMeta.getKeyMetadata().getSerializer());
                     V val = get(key, null, opts);
@@ -513,6 +515,7 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
         }
         
         _walRecoveryStats.addRecentTiming(System.nanoTime() - startTime);
+        return cnt;
     }
     
     public OperationStatistics getStats()
