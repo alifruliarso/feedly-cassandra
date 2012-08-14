@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import javax.management.InstanceAlreadyExistsException;
 import javax.management.MBeanServer;
 import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
@@ -202,6 +203,10 @@ public class CassandraDaoBase<K, V> implements ICassandraDao<K, V>
             
             _logger.info("monitoring registration complete for {}", getClass().getSimpleName());
         } 
+        catch(InstanceAlreadyExistsException e) 
+        {
+            _logger.warn("mbean already exists, new mbeans will not be registered mbeans");
+        }
         catch(Exception e) 
         {
             _logger.warn("error registering mbeans", e);

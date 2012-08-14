@@ -478,10 +478,7 @@ public class PersistenceManager implements IKeyspaceFactory
             return newOpts;
         }
 
-        //in 1.1 do this instead of returning null
-        //            return Collections.singletonMap(CompressionParameters.SSTABLE_COMPRESSION, "");
-        
-        return null;
+        return Collections.singletonMap(CompressionParameters.SSTABLE_COMPRESSION, "");
     }
 
 }
