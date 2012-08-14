@@ -10,6 +10,7 @@ import me.prettyprint.hector.api.Keyspace;
 import me.prettyprint.hector.api.ddl.ColumnFamilyDefinition;
 import me.prettyprint.hector.api.ddl.ComparatorType;
 import me.prettyprint.hector.api.ddl.KeyspaceDefinition;
+import me.prettyprint.hector.api.exceptions.HectorException;
 import me.prettyprint.hector.api.factory.HFactory;
 
 import org.apache.thrift.transport.TTransportException;
@@ -51,14 +52,33 @@ public class CassandraServiceTestBase
             
             if (started)
             {
-                cluster = HFactory.getOrCreateCluster("test-cluster", "localhost:8160");
-                KeyspaceDefinition keyspaceDefn = HFactory.createKeyspaceDefinition(KEYSPACE,
-                                                                                    ThriftKsDef.DEF_STRATEGY_CLASS,
-                                                                                    1,
-                                                                                    Collections.<ColumnFamilyDefinition> emptyList());
+                int retries = 5;
                 
-                cluster.addKeyspace(keyspaceDefn, true);
-                keyspace = HFactory.createKeyspace(KEYSPACE, cluster);
+                boolean bootstrapped = false;
+                while(!bootstrapped)
+                {
+                    try
+                    {
+                        cluster = HFactory.getOrCreateCluster("test-cluster", "localhost:8160");
+                        KeyspaceDefinition keyspaceDefn = HFactory.createKeyspaceDefinition(KEYSPACE,
+                                                                                            ThriftKsDef.DEF_STRATEGY_CLASS,
+                                                                                            1,
+                                                                                            Collections.<ColumnFamilyDefinition> emptyList());
+                        
+                        cluster.addKeyspace(keyspaceDefn, true);
+                        keyspace = HFactory.createKeyspace(KEYSPACE, cluster);
+                        
+                        bootstrapped = true;
+                    }
+                    catch(HectorException ex)
+                    {
+                        if(retries == 0)
+                            throw ex;
+                        
+                        retries--; //pause and then try again
+                        Thread.sleep(1000);
+                    }
+                }
                 
             }
         }
