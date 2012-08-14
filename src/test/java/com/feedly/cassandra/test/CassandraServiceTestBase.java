@@ -93,6 +93,7 @@ public class CassandraServiceTestBase
     public static void afterClass()
     {
         cluster.getConnectionManager().shutdown();
+        cassandra.stop();
     }
     
     

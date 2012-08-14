@@ -16,9 +16,15 @@ public class EmbeddedCassandraService implements Runnable
         cassandraDaemon.init(null);
     }
  
+    @Override
     public void run()
     {
         cassandraDaemon.start();
+    }
+    
+    public void stop()
+    {
+        cassandraDaemon.stop();
     }
     
     public synchronized boolean cleanStart(String keyspace, String snapshotFile) throws TTransportException, IOException, InterruptedException
