@@ -9,6 +9,7 @@ import me.prettyprint.hector.api.ddl.ColumnDefinition;
 import me.prettyprint.hector.api.ddl.ColumnFamilyDefinition;
 import me.prettyprint.hector.api.ddl.ColumnIndexType;
 
+import org.apache.cassandra.db.compaction.LeveledCompactionStrategy;
 import org.apache.cassandra.io.compress.CompressionParameters;
 import org.apache.cassandra.io.compress.DeflateCompressor;
 import org.apache.cassandra.io.compress.SnappyCompressor;
@@ -183,7 +184,11 @@ public class PersistenceManagerSchemaTest extends CassandraServiceTestBase
                     fail("unrecognized index table " + name);
             }
             else if(name.endsWith(PersistenceManager.CF_IDXWAL))
+            {
+                assertEquals(0, cfdef.getGcGraceSeconds());
+                assertEquals(LeveledCompactionStrategy.class.getName(), cfdef.getCompactionStrategy());
                 foundWal = true;
+            }
         }
         
         assertTrue(foundCompositeIndexBeanIdx);

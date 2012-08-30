@@ -29,6 +29,7 @@ import me.prettyprint.hector.api.ddl.ComparatorType;
 import me.prettyprint.hector.api.ddl.KeyspaceDefinition;
 import me.prettyprint.hector.api.factory.HFactory;
 
+import org.apache.cassandra.db.compaction.LeveledCompactionStrategy;
 import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.io.compress.CompressionParameters;
 import org.apache.cassandra.io.compress.DeflateCompressor;
@@ -207,6 +208,8 @@ public class PersistenceManager implements IKeyspaceFactory
         if(!walExists)
         {
             ColumnFamilyDefinition cfDef = new BasicColumnFamilyDefinition(HFactory.createColumnFamilyDefinition(_keyspace, CF_IDXWAL));
+            cfDef.setCompactionStrategy(LeveledCompactionStrategy.class.getSimpleName());
+            cfDef.setGcGraceSeconds(0);//keeps row sizes small and we don't care about inter node consistency, just do extra work on phantom reads
             _logger.info("creating 'write ahead log' column family {}", CF_IDXWAL);
             cfDef.setComparatorType(ComparatorType.COMPOSITETYPE);
             cfDef.setComparatorTypeAlias(String.format("(%s, %s)", ComparatorType.LONGTYPE.getTypeName(), ComparatorType.BYTESTYPE.getTypeName()));
