@@ -1,1 +1,0 @@
-small object mapping library on top of the hector cassandra client
