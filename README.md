@@ -85,8 +85,8 @@ could add methods to implement some application specific logic related to the en
     SimpleEntity e = dao.get("myKey");
 
 See `CassandraDaoBaseTest` for more involved operations, like secondary index lookups, range finds, partial object retrievals, partial
-collection retrievals, and more. As another quick example, if we had a range index defined on anInt, here's how to do a range find for all
-entities with an anInt value between 0 and 2 (inclusive):
+collection retrievals, and more. As another quick example, if we had a range index defined on anInt, here's how to find for all entities 
+with an anInt value between 0 and 2 (inclusive):
 
     SimpleEntity start = new SimpleEntity(), end = new SimpleEntity();
     start.setAnInt(0);
@@ -106,10 +106,12 @@ write a CQL script making sure to...wait never mind. Just call `PersistenceManag
 
 ### Indexing
 
-The library supports native indexing as well as custom secondary indexes. Generally native indexes are preferred, custom ones can be defined
-to support range finds and multi-column indexes. Custom indexes employ a filter/cleanup on read strategy. This can be done inline or offline
-in a separate thread. If we wanted to index the anInt property, we would change it's annotation to `Column(hashIndexed=true)` or
-`Column(rangeIndexed=true)`. The `InlineRepairStrategy` or `OfflineRepairStrategy` can then be configured to cleanup the index.
+The library supports native indexing as well as custom secondary indexes. If we wanted to index the anInt property, we would change it's 
+annotation to `@Column(hashIndexed=true)` or `@Column(rangeIndexed=true)`, respectively. Generally native indexes are preferred, custom ones
+can be defined to support range finds and multi-column indexes. When defining a custom index, there are a couple of items to note. Custom 
+indexes employ a filter/cleanup on read strategy. The `InlineRepairStrategy` or `OfflineRepairStrategy` can be configured to cleanup the 
+index during the read execution or within a separate thread. For larger indexes, an `IIndexRowPartitioner` implementation should be 
+specified. This will be used partition the index column family across several rows.
 
 ## More stuff
 
