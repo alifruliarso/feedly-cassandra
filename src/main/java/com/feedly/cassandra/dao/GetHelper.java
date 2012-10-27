@@ -114,64 +114,93 @@ class GetHelper<K, V> extends LoadHelper<K, V>
         return value;
     }
 
-    public List<V> mget(Collection<K> keys)
+    public List<V> mget(Collection<K> allKeys)
     {
         long startTime = System.nanoTime();
-        List<V> values = null;
+        List<V> allValues = new ArrayList<V>();
         
-        if(_entityMeta.hasNormalColumns())
-            values = bulkLoadFromMultiGet(keys, null, null, null, null, _entityMeta.hasCounterColumns(), null);
-        
-        if(_entityMeta.hasCounterColumns())
-            values = bulkLoadFromMultiCounterGet(keys, values, null, null, null, _entityMeta.hasNormalColumns(), null);
-        
-        
-        _stats.incrNumRows(keys.size());
-        _stats.incrNumOps(1);
-        _stats.addRecentTiming(System.nanoTime()-startTime);
-        
-        return values;
-    }
-
-    public List<V> mget(List<K> keys, List<V> values, GetOptions options)
-    {
-        long startTime = System.nanoTime();
-
-        if(keys == null)
-            throw new IllegalArgumentException("keys parameter is null");
-        if(values != null && keys.size() != values.size())
-            throw new IllegalArgumentException("key and value list must be same size");
-        
-        EConsistencyLevel c = options.getConsistencyLevel();
-        switch(options.getColumnFilterStrategy())
+        List<K> keys = new ArrayList<K>();
+        int totalCnt = allKeys.size();
+        for(K key : allKeys)
         {
-            case UNFILTERED:
-            case RANGE:
-                byte[] start = null;
-                byte[] end = null;
-                if(options.getColumnFilterStrategy() == EColumnFilterStrategy.RANGE)
-                {
-                    start = propertyName(options.getStartColumn(), ComponentEquality.EQUAL); 
-                    end = propertyName(options.getEndColumn(), ComponentEquality.GREATER_THAN_EQUAL); 
-                }
+            keys.add(key);
+            
+            if(keys.size() == totalCnt || keys.size() == CassandraDaoBase.ROW_RANGE_SIZE)
+            {
+                List<V> values = null;
                 
                 if(_entityMeta.hasNormalColumns())
-                    values = bulkLoadFromMultiGet(keys, values, null, start, end, true, c);
+                    values = bulkLoadFromMultiGet(keys, null, null, null, null, _entityMeta.hasCounterColumns(), null);
                 
                 if(_entityMeta.hasCounterColumns())
-                    values = bulkLoadFromMultiCounterGet(keys, values, null, start, end, true, c);
+                    values = bulkLoadFromMultiCounterGet(keys, values, null, null, null, _entityMeta.hasNormalColumns(), null);
                 
-                break;
-                
-            case INCLUDES:
-                values = mget(keys, values, options.getIncludes(), options.getExcludes(), c);
+                allValues.addAll(values);
+                keys.clear();
+            }
         }
-
-        _stats.incrNumRows(keys.size());
+        
+        _stats.incrNumRows(allKeys.size());
         _stats.incrNumOps(1);
         _stats.addRecentTiming(System.nanoTime()-startTime);
         
-        return values;
+        return allValues;
+    }
+
+    public List<V> mget(List<K> allKeys, List<V> allValues, GetOptions options)
+    {
+        long startTime = System.nanoTime();
+
+        if(allKeys == null)
+            throw new IllegalArgumentException("keys parameter is null");
+        if(allValues != null && allKeys.size() != allValues.size())
+            throw new IllegalArgumentException("key and value list must be same size");
+
+        List<V> rv = allValues == null ? new ArrayList<V>() : null;
+        
+        for(int i = 0; i < allKeys.size(); i += CassandraDaoBase.ROW_RANGE_SIZE)
+        {
+            EConsistencyLevel c = options.getConsistencyLevel();
+            int endPos = Math.min(allKeys.size(), i + CassandraDaoBase.ROW_RANGE_SIZE);
+            List<K> keys = allKeys.subList(i, endPos);
+            List<V> values = allValues != null ? allValues.subList(i, endPos) : null;
+            
+            switch(options.getColumnFilterStrategy())
+            {
+                case UNFILTERED:
+                case RANGE:
+                    byte[] start = null;
+                    byte[] end = null;
+                    if(options.getColumnFilterStrategy() == EColumnFilterStrategy.RANGE)
+                    {
+                        start = propertyName(options.getStartColumn(), ComponentEquality.EQUAL); 
+                        end = propertyName(options.getEndColumn(), ComponentEquality.GREATER_THAN_EQUAL); 
+                    }
+                    
+                    if(_entityMeta.hasNormalColumns())
+                        values = bulkLoadFromMultiGet(keys, values, null, start, end, true, c);
+                    
+                    if(_entityMeta.hasCounterColumns())
+                        values = bulkLoadFromMultiCounterGet(keys, values, null, start, end, true, c);
+                    
+                    break;
+                    
+                case INCLUDES:
+                    values = mget(keys, values, options.getIncludes(), options.getExcludes(), c);
+            }
+            
+            if(rv != null)
+                rv.addAll(values);
+        }
+        
+        if(rv == null)
+            rv = allValues;
+        
+        _stats.incrNumRows(allKeys.size());
+        _stats.incrNumOps(1);
+        _stats.addRecentTiming(System.nanoTime()-startTime);
+        
+        return rv;
     }
     
     public Collection<V> mgetAll(GetAllOptions options)

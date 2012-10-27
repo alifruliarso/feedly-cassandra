@@ -1311,7 +1311,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
             //success
         }
         
-        int numBeans = 5;
+        int numBeans = 500;
         List<SampleBean> beans = new ArrayList<SampleBean>();
         List<Long> keys = new ArrayList<Long>();
 
@@ -1358,7 +1358,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         }
         
         assertEquals(1, _dao.getStats().getNumOps());
-        assertEquals(6, _dao.getStats().getNumCassandraOps());
+        assertEquals(505, _dao.getStats().getNumCassandraOps());
         assertEquals(numBeans*110, _dao.getStats().getNumCols());
         assertEquals(numBeans+1, _dao.getStats().getNumRows());
         assertEquals(1, _dao.getStats().getRecentTimings().length);
@@ -2043,7 +2043,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
     @Test
     public void testGetPartial() throws Exception
     {
-        int numBeans = 5;
+        int numBeans = 501;
         List<SampleBean> beans = new ArrayList<SampleBean>();
         List<Long> keys = new ArrayList<Long>();
         
