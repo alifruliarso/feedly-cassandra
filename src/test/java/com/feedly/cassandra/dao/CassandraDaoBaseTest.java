@@ -3513,6 +3513,16 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         }
         _indexedDao.mput(beans);
 
+        Thread.sleep(1000);
+        EntityMetadata<IndexedBean> meta = new EntityMetadata<IndexedBean>(IndexedBean.class);
+        SliceQuery<byte[],Composite,byte[]> query = HFactory.createSliceQuery(_pm.createKeyspace(EConsistencyLevel.ONE), 
+                                                                             BytesArraySerializer.get(), CompositeSerializer.get(), BytesArraySerializer.get());
+        query.setKey(meta.getFamilyNameBytes());
+        query.setColumnFamily(PersistenceManager.CF_IDXWAL);
+        query.setRange(null, null, false, 100);
+        ColumnSlice<Composite,byte[]> slice = query.execute().get();
+        assertEquals(0, slice.getColumns().size());
+
         for(long i = 0; i < 10; i++)
         {
             IndexedBean bean = beans.get((int) i);
@@ -3535,13 +3545,7 @@ public class CassandraDaoBaseTest extends CassandraServiceTestBase
         }
         
         //data put failed, wal columns should exist
-        EntityMetadata<IndexedBean> meta = new EntityMetadata<IndexedBean>(IndexedBean.class);
-        SliceQuery<byte[],Composite,byte[]> query = HFactory.createSliceQuery(_pm.createKeyspace(EConsistencyLevel.ONE), 
-                                                                             BytesArraySerializer.get(), CompositeSerializer.get(), BytesArraySerializer.get());
-        query.setKey(meta.getFamilyNameBytes());
-        query.setColumnFamily(PersistenceManager.CF_IDXWAL);
-        query.setRange(null, null, false, 100);
-        ColumnSlice<Composite,byte[]> slice = query.execute().get();
+        slice = query.execute().get();
         assertEquals(10, slice.getColumns().size());
         
         for(HColumn<Composite, byte[]> col : slice.getColumns())

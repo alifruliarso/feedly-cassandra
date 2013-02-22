@@ -44,7 +44,6 @@ import com.feedly.cassandra.entity.EntityMetadata;
 import com.feedly.cassandra.entity.IndexMetadata;
 import com.feedly.cassandra.entity.PropertyMetadataBase;
 import com.feedly.cassandra.entity.SimplePropertyMetadata;
-import com.feedly.cassandra.entity.enhance.EntityTransformerTask;
 import com.feedly.cassandra.entity.enhance.IEnhancedEntity;
 
 public class PersistenceManager implements IKeyspaceFactory
@@ -162,8 +161,7 @@ public class PersistenceManager implements IKeyspaceFactory
             
             if(!enh)
             {
-                _logger.warn(family.getName() + " has not been enhanced after compilation, it will be ignored. See ", 
-                             EntityTransformerTask.class.getName());
+                _logger.warn(family.getName() + " has not been enhanced after compilation, it will be ignored. See EntityTransformerTask");
                 
                 iter.remove();
             }
