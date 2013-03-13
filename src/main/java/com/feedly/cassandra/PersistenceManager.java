@@ -309,13 +309,16 @@ public class PersistenceManager implements IKeyspaceFactory
                     hasRangeIndexes = true;
             }
             
-            //check if existing column metadata is in sync
+            /*
+             * check if existing column metadata is in sync, be sure not to mutate the cols as some may be 
+             * sent back to the server. Don't touch byte buffers, etc.
+             */
             for(ColumnDefinition colMeta : existing.getColumnMetadata())
             {
                 String colName;
                 if(meta.useCompositeColumns())
                 {
-                    DynamicComposite col = DynamicComposite.fromByteBuffer(colMeta.getName());
+                    DynamicComposite col = DynamicComposite.fromByteBuffer(colMeta.getName().duplicate());
                     Object prop1 = col.get(0);
                     if(prop1 instanceof String)
                         colName = (String) prop1;
@@ -323,13 +326,14 @@ public class PersistenceManager implements IKeyspaceFactory
                         colName = null;
                 }
                 else
-                    colName = StringSerializer.get().fromByteBuffer(colMeta.getName());
+                    colName = StringSerializer.get().fromByteBuffer(colMeta.getName().duplicate());
                 
                 PropertyMetadataBase pm = meta.getPropertyByPhysicalName(colName);
                 if(pm != null)
                 {
                     boolean isHashIndexed = hashIndexedProps.remove(pm);
-                    
+                    _logger.info("index on {}.{} exists", familyName, pm.getPhysicalName()); 
+
                     if(colMeta.getIndexType() != null && !isHashIndexed)
                         _logger.warn("{}.{} is indexed in cassandra, but not in the data model. manual intervention needed", 
                                      familyName, pm.getPhysicalName());
@@ -340,21 +344,20 @@ public class PersistenceManager implements IKeyspaceFactory
                 }
                 else
                 {
-                    _logger.warn("encountered unmapped column {}.{}", familyName, colMeta.getName());
+                    _logger.warn("encountered unmapped column {}.{}", familyName, colName);
                 }
             }
-
+            
             syncRangeIndexFamilies(meta, hasRangeIndexes, keyspaceDef);
             syncCounterFamily(meta, keyspaceDef);
 
             for(SimplePropertyMetadata pm : hashIndexedProps)
             {
                 existing.addColumnDefinition(createColDef(meta, familyName, pm));
-                
                 _logger.info("adding index on {}.{}", familyName, pm.getPhysicalName()); 
                 doUpdate = true;
             }
-            
+
             if(!annotation.compressed())
             {
                 //if don't want to compress but family is compressed, disable compression

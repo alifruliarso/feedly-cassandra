@@ -23,8 +23,9 @@ import com.feedly.cassandra.entity.enhance.ListBean;
 import com.feedly.cassandra.entity.enhance.ParentCounterBean;
 import com.feedly.cassandra.entity.enhance.PartitionedIndexBean;
 import com.feedly.cassandra.entity.enhance.SampleBean;
+import com.feedly.cassandra.entity.enhance.SampleBean2;
 import com.feedly.cassandra.entity.enhance.TtlBean;
-import com.feedly.cassandra.entity.upd_enhance.SampleBean2;
+import com.feedly.cassandra.entity.upd_enhance.SampleBean2Upgrade;
 import com.feedly.cassandra.test.CassandraServiceTestBase;
 
 public class PersistenceManagerSchemaTest extends CassandraServiceTestBase
@@ -204,23 +205,23 @@ public class PersistenceManagerSchemaTest extends CassandraServiceTestBase
         PersistenceManager pm = new PersistenceManager();
         configurePersistenceManager(pm);
         
-        pm.setPackagePrefixes(new String[] {SampleBean.class.getPackage().getName()});
+        pm.setPackagePrefixes(new String[] {SampleBean2.class.getPackage().getName()});
         pm.init();
         
         pm = new PersistenceManager();
         configurePersistenceManager(pm);
         
         //points to same physical table as sample bean, should convert table to compressed and add an index on strVal
-        pm.setPackagePrefixes(new String[] {SampleBean2.class.getPackage().getName()});
+        pm.setPackagePrefixes(new String[] {SampleBean2Upgrade.class.getPackage().getName()});
         pm.init();
         
-        String expected = SampleBean.class.getAnnotation(ColumnFamily.class).name();
+        String expected = SampleBean2.class.getAnnotation(ColumnFamily.class).name();
         for(ColumnFamilyDefinition cfdef : cluster.describeKeyspace(KEYSPACE).getCfDefs())
         {
             if(cfdef.getName().equals(expected))
             {
                  assertEquals(SnappyCompressor.class.getName(), cfdef.getCompressionOptions().get(CompressionParameters.SSTABLE_COMPRESSION));
-                 assertEquals(1, cfdef.getColumnMetadata().size());
+                 assertEquals(3, cfdef.getColumnMetadata().size());
                  assertEquals(ColumnIndexType.KEYS, cfdef.getColumnMetadata().get(0).getIndexType());
 
                 return;

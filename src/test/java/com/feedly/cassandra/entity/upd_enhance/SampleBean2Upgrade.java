@@ -12,14 +12,17 @@ import com.feedly.cassandra.anno.UnmappedColumnHandler;
 import com.feedly.cassandra.entity.EntityUtils;
 import com.feedly.cassandra.entity.enhance.SampleBean;
 
-@ColumnFamily(name="sample", compressed=true)
-public class SampleBean2 implements Cloneable, Comparable<SampleBean2>
+@ColumnFamily(name="sample2", compressed=true, forceCompositeColumns=true)
+public class SampleBean2Upgrade implements Cloneable, Comparable<SampleBean2Upgrade>
 {
     @RowKey
     private Long rowKey;
     
     @Column(name="s", hashIndexed=true)
     private String strVal;
+    
+    @Column(name="b", hashIndexed=true)
+    private boolean boolVal2;
     
     @Column
     private int intVal;
@@ -176,7 +179,7 @@ public class SampleBean2 implements Cloneable, Comparable<SampleBean2>
     }
 
     @Override
-    public int compareTo(SampleBean2 o)
+    public int compareTo(SampleBean2Upgrade o)
     {
         return rowKey.compareTo(o.rowKey);
     }
@@ -191,14 +194,23 @@ public class SampleBean2 implements Cloneable, Comparable<SampleBean2>
         this.unmapped = unmapped;
     }
     
-    @Override
     public Object clone() throws CloneNotSupportedException
     {
-        SampleBean2 clone = (SampleBean2) super.clone();
+        SampleBean2Upgrade clone = (SampleBean2Upgrade) super.clone();
         clone.unmapped = new HashMap<String, Object>(unmapped);
         clone.dateVal = (Date) dateVal.clone();
                
         return clone;
+    }
+
+    public boolean getBoolVal2()
+    {
+        return boolVal2;
+    }
+
+    public void setBoolVal2(boolean boolVal2)
+    {
+        this.boolVal2 = boolVal2;
     }
 
 }
